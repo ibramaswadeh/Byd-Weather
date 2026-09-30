@@ -1,0 +1,4 @@
+<resources>
+    <string name="current_location">Current location</string>
+    <string name="refresh_accessibility_description">Refresh the stock BYD weather display using Open-Meteo when its refresh button is tapped.</string>
+</resources>
