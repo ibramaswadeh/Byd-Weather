@@ -28,6 +28,16 @@ public class WeatherMappingTest {
         assertEquals(Boolean.FALSE, nighttime.get("isdaynight"));
     }
 
+
+    @Test public void rejectsMissingOrInvalidCurrentDayFlag() throws Exception {
+        for (Object invalid : new Object[]{null, JSONObject.NULL, -1, 2, 0.5, "1", "day", true}) {
+            JSONObject forecast = forecast();
+            if (invalid == null) forecast.getJSONObject("current").remove("is_day");
+            else forecast.getJSONObject("current").put("is_day", invalid);
+            assertThrows(org.json.JSONException.class, () -> payload(forecast));
+        }
+    }
+
     private static JSONObject payload(JSONObject forecast) throws Exception {
         return new JSONObject(WeatherMapping.toBydJson(forecast, null,
                 "Amman", "Amman", NOW_MS));
