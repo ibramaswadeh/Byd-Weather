@@ -52,7 +52,7 @@ public final class WeatherMapping {
         if (code < 0) throw new JSONException("unsupported current weather code");
         JSONObject condition = new JSONObject()
                 .put("temperature", temperature)
-                .put("isdaynight", requireNumber(current, "is_day") == 1)
+                .put("isdaynight", requireDayFlag(current))
                 .put("realfeel", requireNumber(current, "apparent_temperature"))
                 .put("cnweatherid", code)
                 .put("weatherid", code)
@@ -252,6 +252,14 @@ public final class WeatherMapping {
         if (code >= 71 && code <= 77 || code >= 85 && code <= 86) return "Snow";
         if (code >= 95) return "Thunderstorm";
         return "Unknown";
+    }
+
+    private static boolean requireDayFlag(JSONObject current) throws JSONException {
+        Object value = current.opt("is_day");
+        if (!(value instanceof Number)) throw new JSONException("missing or invalid is_day");
+        double flag = ((Number) value).doubleValue();
+        if (flag != 0 && flag != 1) throw new JSONException("invalid is_day");
+        return flag == 1;
     }
 
     private static int number(JSONObject object, String key) {
