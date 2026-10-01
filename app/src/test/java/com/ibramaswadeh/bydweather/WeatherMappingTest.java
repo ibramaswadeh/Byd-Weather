@@ -20,6 +20,21 @@ import static org.junit.Assert.*;
 public class WeatherMappingTest {
     private static final long NOW_MS = 1_759_320_000_000L;
 
+    @Test public void removesSubDistrictSuffixFromWidgetLocation() throws Exception {
+        String[] inputs = {
+                "{\"city\":\"Amman\",\"locality\":\"Al Jubeiha Sub-District\"}",
+                "{\"city\":\"Amman\",\"localityName\":\"Al Jubeiha sub district\"}",
+                "{\"city\":\"Amman\",\"localityInfo\":{\"administrative\":[{\"name\":\"Al Jubeiha Subdistrict\",\"description\":\"sub-district\",\"order\":4}]}}"
+        };
+        for (String input : inputs) {
+            JSONObject result = new JSONObject(WeatherMapping.toBydJson(forecast(), null,
+                    new JSONObject(input), "Current location", NOW_MS));
+            JSONObject city = result.getJSONObject("data").getJSONObject("city");
+            assertEquals("Al Jubeiha, Amman", city.getString("name"));
+            assertEquals("Al Jubeiha, Amman", city.getString("englishCityName"));
+        }
+    }
+
     @Test public void providesNumericDailyUvTextWithoutGuessingDescriptions() throws Exception {
         JSONObject data = payload(forecast()).getJSONObject("data");
         JSONObject day = data.getJSONObject("dailys").getJSONArray("dailyweathers").getJSONObject(1);

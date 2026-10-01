@@ -26,11 +26,12 @@ public final class WeatherMapping {
     public static String toBydJson(JSONObject forecast, JSONObject airQuality,
             JSONObject location, String fallbackName, long nowMs) throws JSONException {
         String city = locationText(location, "city");
-        String district = locationText(location, "locality");
+        String district = districtName(locationText(location, "locality"));
         if (city != null && city.equalsIgnoreCase(district)) district = null;
-        if (district == null) district = locationText(location, "localityName");
+        if (district == null) district = districtName(locationText(location, "localityName"));
         if (city != null && city.equalsIgnoreCase(district)) district = null;
-        if (district == null) district = administrativeDistrict(location, city);
+        if (district == null) district = districtName(administrativeDistrict(location, city));
+        if (city != null && city.equalsIgnoreCase(district)) district = null;
         String name = district == null ? city : city == null ? district : district + ", " + city;
         if (name == null) name = fallbackName;
         JSONObject result = new JSONObject(toBydJson(forecast, airQuality, name, name, nowMs));
@@ -43,6 +44,12 @@ public final class WeatherMapping {
         if (province != null) metadata.put("provincename", province);
         if (city != null) metadata.put("parentcity", city);
         return result.toString();
+    }
+
+    private static String districtName(String name) {
+        if (name == null) return null;
+        String label = name.replaceFirst("(?i)(?:^|\\s+)sub(?:-|\\s*)district\\s*$", "").trim();
+        return label.isEmpty() ? null : label;
     }
 
     private static String locationText(JSONObject location, String key) {
