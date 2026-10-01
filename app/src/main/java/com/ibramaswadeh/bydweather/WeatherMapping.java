@@ -52,6 +52,7 @@ public final class WeatherMapping {
         if (code < 0) throw new JSONException("unsupported current weather code");
         JSONObject condition = new JSONObject()
                 .put("temperature", temperature)
+                .put("isdaynight", requireNumber(current, "is_day") == 1)
                 .put("realfeel", requireNumber(current, "apparent_temperature"))
                 .put("cnweatherid", code)
                 .put("weatherid", code)
