@@ -182,7 +182,8 @@ public final class WeatherMapping {
             JSONArray days = daily == null ? null : daily.optJSONArray("dailyweathers");
             JSONArray hours = hourly == null ? null : hourly.optJSONArray("hourlyweathers");
             if (city == null || text(city, "name") == null || text(city, "englishCityName") == null
-                    || condition == null || !numberPresent(condition, "temperature")
+                    || condition == null || !(condition.opt("isdaynight") instanceof Boolean)
+                    || !numberPresent(condition, "temperature")
                     || !numberPresent(condition, "cnweatherid") || text(condition, "weathertext") == null
                     || !numberPresent(condition, "uVIndex") || !numberPresent(condition, "windspeed")
                     || !numberPresent(condition, "windlevel") || text(condition, "winddir") == null
