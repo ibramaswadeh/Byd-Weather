@@ -8,6 +8,7 @@ refresh controls.
 ## Features
 
 - Current weather, hourly and daily forecasts, and air quality when available.
+- Widget location names from BigDataCloud, formatted as `district, city`.
 - Automatic updates every 15 minutes by default; adjustable from 5 to 180 minutes.
 - Optional startup with the car and a persistent status notification.
 - Manual updates from the app or, optionally, the stock widget's refresh button.
@@ -55,6 +56,14 @@ The stock weather app can still perform its own refresh action.
 The service waits for usable internet, then collects a fresh GPS fix from NMEA
 messages for up to 60 seconds. Cached locations and network-based coordinates
 are not used. GPS listeners are released after acquisition finishes or stops.
+
+The app sends that fresh fix directly to [BigDataCloud](https://www.bigdatacloud.com/)
+to resolve the widget location name. It combines the returned locality (district
+or suburb) and city as `district, city`, using the device language. If only one
+name is available, it uses that name; matching names appear once. Failed or empty
+lookups use **Current location** and allow the weather update to continue. No
+geocoding API key is needed. See the [BigDataCloud research note](docs/research/bigdatacloud-geocoding.md)
+for the response fields and the fresh-device-location requirement.
 
 After fetching weather, the app writes it to the BYD provider, reads it back,
 and requests a widget refresh. A successful update advances the saved timestamp.
@@ -152,3 +161,4 @@ Licensed under [AGPL-3.0-only](LICENSE). The weather adapter originates from
 
 Weather data comes from Open-Meteo; attribution appears in the app and weather
 payload. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for credits.
+Location names come from BigDataCloud's free client reverse-geocoding API.

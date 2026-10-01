@@ -23,6 +23,25 @@ public final class WeatherMapping {
 
     public static final String ATTRIBUTION = "Weather data by Open-Meteo.com";
 
+    /** Maps a BigDataCloud location along with the forecast into the widget payload. */
+    public static String toBydJson(JSONObject forecast, JSONObject airQuality,
+            JSONObject location, String fallbackName, long nowMs) throws JSONException {
+        String district = locationText(location, "locality");
+        if (district == null) district = locationText(location, "localityName");
+        String city = locationText(location, "city");
+        if (city != null && city.equalsIgnoreCase(district)) district = null;
+        String name = district == null ? city : city == null ? district : district + ", " + city;
+        if (name == null) name = fallbackName;
+        return toBydJson(forecast, airQuality, name, name, nowMs);
+    }
+
+    private static String locationText(JSONObject location, String key) {
+        Object value = location == null ? null : location.opt(key);
+        if (!(value instanceof String)) return null;
+        String name = ((String) value).trim();
+        return name.isEmpty() ? null : name;
+    }
+
     public static String toBydJson(JSONObject forecast, JSONObject airQuality,
             String cityName, String englishCityName, long nowMs) throws JSONException {
         if (forecast == null || !forecast.has("current")

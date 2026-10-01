@@ -18,6 +18,48 @@ import static org.junit.Assert.*;
 public class WeatherMappingTest {
     private static final long NOW_MS = 1_759_320_000_000L;
 
+    @Test public void passesBigDataCloudDistrictAndCityToWidgetName() throws Exception {
+        JSONObject location = new JSONObject().put("locality", "Al Jubeiha")
+                .put("city", "Amman");
+        JSONObject result = new JSONObject(WeatherMapping.toBydJson(forecast(), null,
+                location, "Current location", NOW_MS));
+        JSONObject city = result.getJSONObject("data").getJSONObject("city");
+        assertEquals("Al Jubeiha, Amman", city.getString("name"));
+        assertEquals("Al Jubeiha, Amman", city.getString("englishCityName"));
+        assertTrue(WeatherMapping.isComplete(result.toString()));
+    }
+
+    @Test public void acceptsBigDataCloudLocalityNameVariant() throws Exception {
+        JSONObject location = new JSONObject().put("locality", " ")
+                .put("localityName", " Al Jubeiha ").put("city", " Amman ");
+        JSONObject result = new JSONObject(WeatherMapping.toBydJson(forecast(), null,
+                location, "Current location", NOW_MS));
+        assertEquals("Al Jubeiha, Amman",
+                result.getJSONObject("data").getJSONObject("city").getString("name"));
+    }
+
+    @Test public void avoidsEmptyOrRepeatedLocationLabels() throws Exception {
+        String[][] cases = {
+                {"{\"city\":\"Amman\"}", "Amman"},
+                {"{\"locality\":\"Al Jubeiha\"}", "Al Jubeiha"},
+                {"{\"locality\":\" amman \",\"city\":\"Amman\"}", "Amman"},
+                {"{\"locality\":\"Al Jubeiha\",\"localityName\":\"Other\",\"city\":\"Amman\"}", "Al Jubeiha, Amman"},
+                {"{\"locality\":null,\"city\":\" \"}", "Current location"},
+                {"{\"locality\":42,\"city\":{},\"principalSubdivision\":\"Amman Governorate\"}", "Current location"},
+                {"{}", "Current location"},
+                {null, "Current location"}
+        };
+        for (String[] example : cases) {
+            JSONObject location = example[0] == null ? null : new JSONObject(example[0]);
+            JSONObject result = new JSONObject(WeatherMapping.toBydJson(forecast(), null,
+                    location, "Current location", NOW_MS));
+            JSONObject city = result.getJSONObject("data").getJSONObject("city");
+            assertEquals(example[1], city.getString("name"));
+            assertEquals(example[1], city.getString("englishCityName"));
+            assertTrue(WeatherMapping.isComplete(result.toString()));
+        }
+    }
+
     @Test public void passesCurrentDayAndNightAsBooleanFlags() throws Exception {
         JSONObject forecast = forecast();
         JSONObject daytime = payload(forecast).getJSONObject("data").getJSONObject("condition");

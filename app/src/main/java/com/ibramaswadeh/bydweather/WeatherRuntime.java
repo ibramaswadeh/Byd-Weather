@@ -6,8 +6,6 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.database.Cursor;
-import android.location.Address;
-import android.location.Geocoder;
 import android.location.Location;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -23,7 +21,6 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
@@ -240,8 +237,8 @@ public final class WeatherRuntime {
         try {
             emit("weather_request", "reason", reason);
             if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
-            City city = geocode(location);
             String query = coordinateQuery(location);
+            JSONObject geocoding = geocode(query);
             JSONObject forecast = getJson("https://api.open-meteo.com/v1/forecast?" + query
                     + "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,uv_index"
                     + "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day"
@@ -254,8 +251,8 @@ public final class WeatherRuntime {
             } catch (Exception ignored) {
                 emit("weather_aqi_unavailable");
             }
-            String payload = WeatherMapping.toBydJson(forecast, aqi, city.localName,
-                    city.englishName, System.currentTimeMillis());
+            String payload = WeatherMapping.toBydJson(forecast, aqi, geocoding,
+                    friendlyLocationFallback(), System.currentTimeMillis());
             if (!WeatherMapping.isComplete(payload)) throw new IllegalStateException("incomplete BYD payload");
             if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
             if (!writeProvider(payload, requestGeneration)) throw new IllegalStateException("provider readback failed");
@@ -651,39 +648,20 @@ public final class WeatherRuntime {
         }
     }
 
-    private City geocode(Location location) {
-        String language = Locale.getDefault().getLanguage();
-        String fallback = friendlyLocationFallback();
-        double latitude = location.getLatitude();
-        double longitude = location.getLongitude();
-        String failureReason = null;
+    private JSONObject geocode(String coordinateQuery) {
+        String language = normalizedLanguage(Locale.getDefault().getLanguage());
         try {
-            if (!Geocoder.isPresent()) {
-                failureReason = "provider_unavailable";
+            // The free client endpoint only accepts the calling device's live position.
+            if (SystemClock.elapsedRealtime() > locationExpiresAtElapsedMs) {
+                throw new IllegalStateException("GPS fix expired before geocoding");
             }
-        } catch (Throwable failure) {
-            failureReason = "availability_check_failed:" + summary(failure);
+            return getJson("https://api.bigdatacloud.net/data/reverse-geocode-client?"
+                    + coordinateQuery + "&localityLanguage=" + URLEncoder.encode(language, "UTF-8"));
+        } catch (Exception failure) {
+            emit("weather_geocoder_fallback", "provider", "BigDataCloud",
+                    "ui_language", language, "reason", summary(failure));
+            return null;
         }
-        if (failureReason == null) {
-            try {
-                List<Address> addresses = new Geocoder(context).getFromLocation(
-                        latitude, longitude, 1);
-                if (addresses != null && !addresses.isEmpty()) {
-                    Address address = addresses.get(0);
-                    String city = firstNonEmpty(address.getLocality(), address.getSubAdminArea(),
-                            address.getAdminArea());
-                    if (city != null) return new City(city, city);
-                    failureReason = "no_usable_name";
-                } else {
-                    failureReason = "no_result";
-                }
-            } catch (Throwable failure) {
-                failureReason = summary(failure);
-            }
-        }
-        emit("weather_geocoder_fallback", "ui_language", normalizedLanguage(language),
-                "latitude", latitude, "longitude", longitude, "reason", failureReason);
-        return new City(fallback, fallback);
     }
 
     static String normalizedLanguage(String language) {
@@ -692,11 +670,6 @@ public final class WeatherRuntime {
 
     private String friendlyLocationFallback() {
         return context.getString(R.string.current_location);
-    }
-
-    static String firstNonEmpty(String... values) {
-        for (String value : values) if (value != null && !value.trim().isEmpty()) return value;
-        return null;
     }
 
     private JSONObject getJson(String url) throws Exception {
@@ -810,12 +783,4 @@ public final class WeatherRuntime {
         }
     }
 
-    private static final class City {
-        final String localName;
-        final String englishName;
-        City(String localName, String englishName) {
-            this.localName = localName;
-            this.englishName = englishName;
-        }
-    }
 }
