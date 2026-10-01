@@ -1,5 +1,7 @@
 # BigDataCloud reverse geocoding for the widget location
 
+This is the earlier baseline audit. The [district and widget mapping update](widget-mapping-implementation.md) records the fixes and expanded conversions implemented afterward.
+
 Research date: 2026-10-01. Application baseline: `63c48f6edce188bf64a0df3f5b08dc237a07ec33` (version 1.1.1, version code 3).
 
 ## Endpoint and Android use

@@ -36,6 +36,7 @@ public final class WeatherRuntime {
     public static final String PREF_ENABLED = "weather_enabled";
     public static final String PREF_INTERVAL_MINUTES = "weather_interval_minutes";
     public static final String PREF_LAST_SUCCESS_MS = "weather_last_success_ms";
+    static final String PREF_LAST_LOCATION_NAME = "weather_last_location_name";
     public static final int DEFAULT_INTERVAL_MINUTES = 15;
     public static final int MIN_INTERVAL_MINUTES = 5;
     public static final int MAX_INTERVAL_MINUTES = 180;
@@ -241,25 +242,28 @@ public final class WeatherRuntime {
             JSONObject geocoding = geocode(query);
             JSONObject forecast = getJson("https://api.open-meteo.com/v1/forecast?" + query
                     + "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,uv_index"
-                    + "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day"
-                    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,wind_speed_10m_max,wind_direction_10m_dominant"
-                    + "&timezone=auto&past_days=1&forecast_days=15&forecast_hours=8");
+                    + "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day,precipitation,rain,showers,relative_humidity_2m,cloud_cover,wind_gusts_10m"
+                    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,wind_speed_10m_max,wind_direction_10m_dominant,apparent_temperature_max,apparent_temperature_min,pressure_msl_mean,visibility_min,moonrise,moonset"
+                    + "&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm&timezone=auto&past_days=1&forecast_days=15");
             JSONObject aqi = null;
             try {
                 aqi = getJson("https://air-quality-api.open-meteo.com/v1/air-quality?" + query
-                        + "&current=european_aqi,pm10,pm2_5&timezone=auto");
+                        + "&current=european_aqi,pm10,pm2_5&hourly=european_aqi&past_days=1&forecast_days=5&timezone=auto");
             } catch (Exception ignored) {
                 emit("weather_aqi_unavailable");
             }
             String payload = WeatherMapping.toBydJson(forecast, aqi, geocoding,
                     friendlyLocationFallback(), System.currentTimeMillis());
+            String locationName = new JSONObject(payload).getJSONObject("data")
+                    .getJSONObject("city").getString("name");
             if (!WeatherMapping.isComplete(payload)) throw new IllegalStateException("incomplete BYD payload");
             if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
             if (!writeProvider(payload, requestGeneration)) throw new IllegalStateException("provider readback failed");
             synchronized (stateLock) {
                 success = true;
                 lastSuccessMs = System.currentTimeMillis();
-                preferences.edit().putLong(PREF_LAST_SUCCESS_MS, lastSuccessMs).apply();
+                preferences.edit().putLong(PREF_LAST_SUCCESS_MS, lastSuccessMs)
+                        .putString(PREF_LAST_LOCATION_NAME, locationName).apply();
             }
             emit("weather_success", "last_success_ms", lastSuccessMs);
         } catch (InterruptedException interrupted) {

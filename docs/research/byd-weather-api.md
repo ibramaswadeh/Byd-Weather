@@ -1,5 +1,7 @@
 # BYD weather API and Open-Meteo mapping
 
+This is the earlier baseline audit. The [district and widget mapping update](widget-mapping-implementation.md) records the fixes and expanded conversions implemented afterward.
+
 Research date: 2026-10-01. Baseline: `ibramaswadeh/Byd-Weather` commit `d0b8668581339d74c62cf0bf74d563d91982656e`.
 
 ## Confirmed current day/night omission

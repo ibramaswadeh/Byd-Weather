@@ -60,21 +60,32 @@ are not used. GPS listeners are released after acquisition finishes or stops.
 The app sends that fresh fix directly to [BigDataCloud](https://www.bigdatacloud.com/)
 to resolve the widget location name. It combines the returned locality (district
 or suburb) and city as `district, city`, using the device language. If only one
-name is available, it uses that name; matching names appear once. Failed or empty
+name is available, it uses that name; matching names appear once. If locality
+repeats the city, the mapper looks for a finer administrative district using
+BigDataCloud’s hierarchy order. Failed or empty
 lookups use **Current location** and allow the weather update to continue. No
 geocoding API key is needed. See the [BigDataCloud research note](docs/research/bigdatacloud-geocoding.md)
 for the response fields and the fresh-device-location requirement.
 
 After fetching weather, the app writes it to the BYD provider, reads it back,
-and requests a widget refresh. A successful update advances the saved timestamp.
+and requests a widget refresh. A successful update advances the saved timestamp
+and saves the written location label, displayed in the app’s status.
 
 Current weather and hourly forecasts include an `isdaynight` boolean derived
 from Open-Meteo's `is_day`: `true` means daytime and `false` means night. A missing
 or invalid current flag fails the update, preserving the previous weather data.
 The current flag follows the existing hourly convention; the stock widget's
 support for that current field still needs verification on a physical head unit.
-See the [BYD weather API audit](docs/research/byd-weather-api.md) for sources,
-remaining mapping gaps, and compatibility limits.
+Hourly output includes both known flag spellings and up to 48 hours beginning
+at the current forecast hour. Daily day/night conditions use separate hourly
+samples; available feels-like ranges, pressure, visibility, lunar events and
+daily European AQI are converted to the known widget fields. Optional missing
+values are omitted. Wind force uses Beaufort bands while speeds remain km/h.
+
+See the [implementation and remaining limits](docs/research/widget-mapping-implementation.md),
+[full public widget attribute inventory](docs/research/byd-widget-schema.md), and
+[Open-Meteo feature research](docs/research/open-meteo-widget-features.md). The
+native schema and every added field still need verification on a physical car.
 
 GPS and weather-fetch failures keep the previous weather data. Failed updates
 leave the saved success timestamp unchanged. Failed provider writes attempt
