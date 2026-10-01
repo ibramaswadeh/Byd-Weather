@@ -29,14 +29,29 @@ jobs:
       - name: Test, lint, and build release
         run: ./gradlew --no-daemon --console=plain testDebugUnitTest lintRelease assembleRelease
       - name: Package release APK
+        id: release
         run: |
-          mkdir -p dist
-          cp app/build/outputs/apk/release/app-release-unsigned.apk dist/BYD-Weather-1.1.1-release-unsigned.apk
-          cd dist
-          sha256sum BYD-Weather-1.1.1-release-unsigned.apk > SHA256SUMS
+          python3 - <<'PY'
+          import os, pathlib, re, shutil, subprocess, hashlib
+          apk = pathlib.Path('app/build/outputs/apk/release/app-release-unsigned.apk')
+          aapt = pathlib.Path(os.environ['ANDROID_HOME']) / 'build-tools/35.0.0/aapt'
+          badging = subprocess.check_output([str(aapt), 'dump', 'badging', str(apk)], text=True)
+          version = re.search(r"versionName='([^']+)'", badging).group(1)
+          version_code = re.search(r"versionCode='([^']+)'", badging).group(1)
+          print('APK version:', version, 'version code:', version_code)
+          dist = pathlib.Path('dist')
+          dist.mkdir(exist_ok=True)
+          name = 'BYD-Weather-' + version + '-release-unsigned'
+          packaged = dist / (name + '.apk')
+          shutil.copyfile(apk, packaged)
+          checksum = hashlib.sha256(packaged.read_bytes()).hexdigest()
+          (dist / 'SHA256SUMS').write_text(checksum + '  ' + packaged.name + '\n')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('name=' + name + '\n')
+          PY
       - uses: actions/upload-artifact@v4
         with:
-          name: BYD-Weather-1.1.1-release-unsigned
+          name: ${{ steps.release.outputs.name }}
           path: dist/
           if-no-files-found: error
       - name: Upload check reports

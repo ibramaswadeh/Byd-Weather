@@ -59,6 +59,14 @@ are not used. GPS listeners are released after acquisition finishes or stops.
 After fetching weather, the app writes it to the BYD provider, reads it back,
 and requests a widget refresh. A successful update advances the saved timestamp.
 
+Current weather and hourly forecasts include an `isdaynight` boolean derived
+from Open-Meteo's `is_day`: `true` means daytime and `false` means night. A missing
+or invalid current flag fails the update, preserving the previous weather data.
+The current flag follows the existing hourly convention; the stock widget's
+support for that current field still needs verification on a physical head unit.
+See the [BYD weather API audit](docs/research/byd-weather-api.md) for sources,
+remaining mapping gaps, and compatibility limits.
+
 GPS and weather-fetch failures keep the previous weather data. Failed updates
 leave the saved success timestamp unchanged. Failed provider writes attempt
 to restore the previous data.
@@ -133,8 +141,9 @@ With a device or emulator connected, run the icon rendering tests:
 ./gradlew connectedDebugAndroidTest
 ```
 
-The [GitHub Actions workflow](.github/workflows/android.yml) also runs these
-checks and captures icons on Android 10 emulators at head-unit and phone sizes.
+The [GitHub Actions workflow](.github/workflows/android.yml) runs unit tests,
+release lint, and the release build, then uploads an unsigned APK and its SHA-256
+checksum. Connected icon rendering tests require a device or emulator.
 
 ## License and credits
 

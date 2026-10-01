@@ -38,6 +38,20 @@ public class WeatherMappingTest {
         }
     }
 
+
+    @Test public void requiresBooleanCurrentDayFlagBeforeProviderWrite() throws Exception {
+        JSONObject payload = payload(forecast());
+        assertTrue(WeatherMapping.isComplete(payload.toString()));
+        JSONObject condition = payload.getJSONObject("data").getJSONObject("condition");
+        condition.put("isdaynight", false);
+        assertTrue(WeatherMapping.isComplete(payload.toString()));
+        for (Object invalid : new Object[]{null, JSONObject.NULL, 0, 1, "true", "false"}) {
+            if (invalid == null) condition.remove("isdaynight");
+            else condition.put("isdaynight", invalid);
+            assertFalse(WeatherMapping.isComplete(payload.toString()));
+        }
+    }
+
     private static JSONObject payload(JSONObject forecast) throws Exception {
         return new JSONObject(WeatherMapping.toBydJson(forecast, null,
                 "Amman", "Amman", NOW_MS));
