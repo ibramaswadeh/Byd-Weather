@@ -1,4 +1,6 @@
-# Hourly night icons: evidence and remaining native contract
+# Hourly night icons: initial evidence and firmware follow-up
+
+The [DiLink 3.0 firmware audit](firmware-weather-contract.md) now establishes the native parser and icon logic for the user's supplied firmware. Its hourly renderer ignores per-hour flags and derives a global night state from daily timestamps. A native-method replay reproduces the 03:00 sun; anchoring daily records to real sunrise corrects pre-dawn classification. Mixed day/night lists still use one global state. The investigation below records the earlier evidence and uncertainty before the APK was available.
 
 Research date: 2026-10-02. The reported symptom is a sun icon beside the stock widget's 03:00 hourly forecast. This note distinguishes source data and adapter output from the stock widget's consumption rules.
 

@@ -221,7 +221,9 @@ public final class WeatherMapping {
             int dailyAqi = dailyAirQualityValue(airQuality, publicTime, time);
             if (dailyAqi < 0 && i == CURRENT_DAY_INDEX) dailyAqi = airQualityValue(airQuality);
             JSONObject item = new JSONObject()
-                    .put("publictime", publicTime)
+                    // DiLink 3.0 searches these anchors to choose sunset/next sunrise.
+                    // Midnight anchors incorrectly classify pre-dawn updates as daytime.
+                    .put("publictime", sunrise)
                     .put("publictimeFmt", time.formatDate(publicTime))
                     .put("mintemp", requireNumberAt(daily, "temperature_2m_min", i))
                     .put("maxtemp", requireNumberAt(daily, "temperature_2m_max", i))

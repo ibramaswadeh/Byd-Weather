@@ -1,5 +1,7 @@
 # BYD widget attributes and Open-Meteo opportunities
 
+The [original-firmware audit](firmware-weather-contract.md) now adds a verified native field inventory for the user's DiLink 3.0 WeatherData 2.9.5.250616, including the separate widget and service DTOs, accepted types, actually rendered fields and native limitations. The public-adapter inventory below remains historical evidence of compatibility conventions.
+
 The [implementation note](widget-mapping-implementation.md) records which researched fields are now converted in the updated 1.1.1 build.
 
 Research date: 2026-10-01. Application baseline: `478a255ce9b12b5169d9fd65a122b75b2c76d5f3` (the existing BigDataCloud 1.1.1 build). This note inventories every attribute found in the two public BYD weather adapters examined and separates that evidence from a verified native parser contract.

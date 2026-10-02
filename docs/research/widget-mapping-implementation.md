@@ -2,6 +2,8 @@
 
 This records the updated 1.1.1 implementation, following the district-only-city report. Version code remains 3. The [district investigation](bigdatacloud-district-fields.md), [full public widget attribute inventory](byd-widget-schema.md), and [Open-Meteo feature research](open-meteo-widget-features.md) contain pinned primary sources and distinguish adapter conventions from verified native behavior.
 
+The subsequent [original-firmware audit](firmware-weather-contract.md) verifies the native DTOs and consumer methods for DiLink 3.0's WeatherData 2.9.5.250616. Numeric daily item `publictime` now uses that date's actual sunrise: the native night search then selects yesterday's sunset before today's sunrise. Calendar labels, daily selection strings, AQI aggregation, period sampling and lunar fallback still use the original local date. A public-mapper regression and isolated original native-method replay verify the pre-dawn correction. The stock hourly renderer still uses one global night state, so per-hour flags cannot correct a forecast spanning a solar transition.
+
 ## Why the district could disappear
 
 The previous mapper used `locality` (or, only if absent, `localityName`) and `city`. When locality equalled city, it collapsed the duplicate and stopped. It never examined `localityInfo.administrative`, even when a more specific district was available there. A constructed provider-shaped regression reproduced the city-only result; it is not a captured response from the user's car.

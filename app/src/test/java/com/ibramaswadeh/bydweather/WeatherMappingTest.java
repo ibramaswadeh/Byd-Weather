@@ -20,6 +20,30 @@ import static org.junit.Assert.*;
 public class WeatherMappingTest {
     private static final long NOW_MS = 1_759_320_000_000L;
 
+    @Test public void anchorsNativeDailyRecordsAtSunriseForPreDawnNightSelection() throws Exception {
+        JSONObject source = forecast();
+        source.getJSONObject("current").put("time", "2025-10-01T02:00").put("is_day", 0);
+        JSONObject hourly = source.getJSONObject("hourly");
+        for (int i = 0; i < 8; i++) {
+            hourly.getJSONArray("time").put(i, LocalDateTime.of(2025, 10, 1, 2, 0)
+                    .plusHours(i).toString());
+            hourly.getJSONArray("is_day").put(i, i < 4 ? 0 : 1);
+        }
+        JSONObject result = payload(source);
+        JSONArray days = result.getJSONObject("data").getJSONObject("dailys")
+                .getJSONArray("dailyweathers");
+        assertEquals(Instant.parse("2025-09-30T03:00:00Z").toEpochMilli(),
+                days.getJSONObject(0).getLong("publictime"));
+        assertEquals(Instant.parse("2025-10-01T03:00:00Z").toEpochMilli(),
+                days.getJSONObject(1).getLong("publictime"));
+        assertEquals("2025-09-30", days.getJSONObject(0).getString("publictimeFmt"));
+        assertEquals("2025-10-01", days.getJSONObject(1).getString("publictimeFmt"));
+        assertEquals("2025-10-01T00:00:00+03:00", days.getJSONObject(1).getString("moonSetFmt"));
+        assertEquals(Boolean.FALSE, result.getJSONObject("data").getJSONObject("hourlys")
+                .getJSONArray("hourlyweathers").getJSONObject(1).get("isdaynight"));
+        assertTrue(WeatherMapping.isComplete(result.toString()));
+    }
+
     @Test public void removesSubDistrictSuffixFromWidgetLocation() throws Exception {
         String[] inputs = {
                 "{\"city\":\"Amman\",\"locality\":\"Al Jubeiha Sub-District\"}",
@@ -272,7 +296,7 @@ public class WeatherMappingTest {
             assertEquals(Instant.parse("2025-10-01T09:00:00Z").toEpochMilli(),
                     data.getJSONObject("condition").getLong("updatetime"));
             assertEquals("2025-10-01 12:00", data.getJSONObject("condition").getString("updatetimeFmt"));
-            assertEquals(Instant.parse("2025-09-29T21:00:00Z").toEpochMilli(),
+            assertEquals(Instant.parse("2025-09-30T03:00:00Z").toEpochMilli(),
                     data.getJSONObject("dailys").getJSONArray("dailyweathers")
                             .getJSONObject(0).getLong("publictime"));
             assertEquals(Instant.parse("2025-09-30T03:00:00Z").toEpochMilli(),
