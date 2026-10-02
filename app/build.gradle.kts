@@ -15,8 +15,8 @@ android {
         minSdk = 26
         // Target Android 10 to support starting the location foreground service at boot.
         targetSdk = 29
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

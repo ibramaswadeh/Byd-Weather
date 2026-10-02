@@ -357,7 +357,9 @@ public final class MainActivity extends Activity {
                 "Last update: " + DateFormat.getDateTimeInstance().format(new Date(last));
         String state = enabled ? preferences.getString(WeatherService.KEY_STATUS,
                 "Waiting for first update") : "Weather updates are off";
-        statusText.setText(state + "\n" + stamp);
+        String writtenLocation = preferences.getString(WeatherRuntime.PREF_LAST_LOCATION_NAME, "");
+        statusText.setText(state + "\n" + stamp
+                + (writtenLocation.isEmpty() ? "" : "\nLocation: " + writtenLocation));
         if (permissionText != null) {
             String location = hasLocation() ? "Precise GPS granted" : "Precise location permission needed";
             String background = Build.VERSION.SDK_INT < 29 ||

@@ -85,7 +85,7 @@ public final class WeatherService extends Service {
 
     private void weatherEvent(String name, Object[] fields) {
         String status = null;
-        if ("weather_success".equals(name)) status = "Updated successfully";
+        if ("weather_success".equals(name)) status = "Stock widget updated successfully";
         else if ("weather_request".equals(name)) status = "Updating weather";
         else if ("weather_prerequisite_wait".equals(name)) {
             status = "Waiting for GPS location and/or validated internet";
