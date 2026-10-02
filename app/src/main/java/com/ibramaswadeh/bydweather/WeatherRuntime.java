@@ -36,6 +36,8 @@ public final class WeatherRuntime {
     public static final String PREF_ENABLED = "weather_enabled";
     public static final String PREF_INTERVAL_MINUTES = "weather_interval_minutes";
     public static final String PREF_LAST_SUCCESS_MS = "weather_last_success_ms";
+    public static final String PREF_LAST_FETCH_MS = "weather_last_fetch_ms";
+    static final String PREF_LAST_FETCH_LOCATION_NAME = "weather_last_fetch_location_name";
     static final String PREF_LAST_LOCATION_NAME = "weather_last_location_name";
     public static final int DEFAULT_INTERVAL_MINUTES = 15;
     public static final int MIN_INTERVAL_MINUTES = 5;
@@ -57,10 +59,16 @@ public final class WeatherRuntime {
         LOCATION_PERMISSION_DENIED
     }
 
+    /** Success means a validated forecast was cached; error may describe unavailable stock sync. */
     public interface ResultCallback {
         void onResult(boolean success, String error);
     }
 
+    interface JsonFetcher {
+        JSONObject fetch(String url) throws Exception;
+    }
+
+    private final JsonFetcher jsonFetcher;
     private final Context context;
     private final SharedPreferences preferences;
     private final BiConsumer<String, Object[]> eventSink;
@@ -75,6 +83,7 @@ public final class WeatherRuntime {
     private volatile boolean inFlight;
     private volatile long generation;
     private volatile long lastSuccessMs;
+    private volatile long lastFetchMs;
     private volatile ScheduledFuture<?> scheduled;
     private volatile Future<?> activeFuture;
     private boolean requestPending;
@@ -115,6 +124,12 @@ public final class WeatherRuntime {
 
     public WeatherRuntime(Context context, SharedPreferences preferences,
             BiConsumer<String, Object[]> eventSink) {
+        this(context, preferences, eventSink, WeatherRuntime::getJson);
+    }
+
+    WeatherRuntime(Context context, SharedPreferences preferences,
+            BiConsumer<String, Object[]> eventSink, JsonFetcher jsonFetcher) {
+        this.jsonFetcher = java.util.Objects.requireNonNull(jsonFetcher);
         if (context == null || preferences == null) throw new IllegalArgumentException("null runtime argument");
         Context application = context.getApplicationContext();
         this.context = application == null ? context : application;
@@ -122,6 +137,7 @@ public final class WeatherRuntime {
         this.rawGnss = new RawGnssSource(this.context);
         this.eventSink = eventSink;
         this.lastSuccessMs = preferences.getLong(PREF_LAST_SUCCESS_MS, 0L);
+        this.lastFetchMs = preferences.getLong(PREF_LAST_FETCH_MS, lastSuccessMs);
     }
 
     public void start() {
@@ -130,7 +146,7 @@ public final class WeatherRuntime {
             started = true;
             enabled = preferences.getBoolean(PREF_ENABLED, false);
             if (!enabled) return;
-            long dueAt = lastSuccessMs <= 0L ? 0L : lastSuccessMs
+            long dueAt = lastFetchMs <= 0L ? 0L : lastFetchMs
                     + TimeUnit.MINUTES.toMillis(intervalMinutes());
             scheduleLocked(Math.max(0L, dueAt - System.currentTimeMillis()));
         }
@@ -157,7 +173,7 @@ public final class WeatherRuntime {
             } else if (requestPending) {
                 schedulePrerequisiteRecheckLocked();
             } else if (started || changed) {
-                long dueAt = lastSuccessMs <= 0L ? 0L : lastSuccessMs
+                long dueAt = lastFetchMs <= 0L ? 0L : lastFetchMs
                         + TimeUnit.MINUTES.toMillis(interval);
                 scheduleLocked(Math.max(0L, dueAt - System.currentTimeMillis()));
                 emit("weather_enabled", "interval_minutes", interval);
@@ -240,14 +256,14 @@ public final class WeatherRuntime {
             if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
             String query = coordinateQuery(location);
             JSONObject geocoding = geocode(query);
-            JSONObject forecast = getJson("https://api.open-meteo.com/v1/forecast?" + query
+            JSONObject forecast = jsonFetcher.fetch("https://api.open-meteo.com/v1/forecast?" + query
                     + "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,uv_index"
-                    + "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day,precipitation,rain,showers,relative_humidity_2m,cloud_cover,wind_gusts_10m"
-                    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,wind_speed_10m_max,wind_direction_10m_dominant,apparent_temperature_max,apparent_temperature_min,pressure_msl_mean,visibility_min,moonrise,moonset"
+                    + "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day,precipitation,rain,showers,snowfall,relative_humidity_2m,cloud_cover,wind_gusts_10m,apparent_temperature,pressure_msl,visibility,uv_index,dew_point_2m"
+                    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,wind_speed_10m_max,wind_direction_10m_dominant,apparent_temperature_max,apparent_temperature_min,pressure_msl_mean,visibility_min,moonrise,moonset,precipitation_sum,rain_sum,showers_sum,snowfall_sum,precipitation_probability_max,precipitation_hours,sunshine_duration,wind_gusts_10m_max"
                     + "&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm&timezone=auto&past_days=1&forecast_days=15");
             JSONObject aqi = null;
             try {
-                aqi = getJson("https://air-quality-api.open-meteo.com/v1/air-quality?" + query
+                aqi = jsonFetcher.fetch("https://air-quality-api.open-meteo.com/v1/air-quality?" + query
                         + "&current=european_aqi,pm10,pm2_5&hourly=european_aqi&past_days=1&forecast_days=5&timezone=auto");
             } catch (Exception ignored) {
                 emit("weather_aqi_unavailable");
@@ -258,14 +274,35 @@ public final class WeatherRuntime {
                     .getJSONObject("city").getString("name");
             if (!WeatherMapping.isComplete(payload)) throw new IllegalStateException("incomplete BYD payload");
             if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
-            if (!writeProvider(payload, requestGeneration)) throw new IllegalStateException("provider readback failed");
             synchronized (stateLock) {
+                if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
+                lastFetchMs = System.currentTimeMillis();
+                preferences.edit().putString(WeatherWidgetProvider.PREF_PAYLOAD, payload)
+                        .putLong(PREF_LAST_FETCH_MS, lastFetchMs)
+                        .putString(PREF_LAST_FETCH_LOCATION_NAME, locationName).apply();
                 success = true;
-                lastSuccessMs = System.currentTimeMillis();
-                preferences.edit().putLong(PREF_LAST_SUCCESS_MS, lastSuccessMs)
-                        .putString(PREF_LAST_LOCATION_NAME, locationName).apply();
             }
-            emit("weather_success", "last_success_ms", lastSuccessMs);
+            emit("weather_forecast_success", "last_fetch_ms", lastFetchMs);
+            try {
+                WeatherWidgetProvider.updateAll(context);
+            } catch (RuntimeException failure) {
+                emit("weather_widget_refresh_failure", "error", summary(failure));
+            }
+            boolean nativeSynced = writeProvider(payload, requestGeneration);
+            synchronized (stateLock) {
+                if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
+                if (nativeSynced) {
+                    lastSuccessMs = System.currentTimeMillis();
+                    preferences.edit().putLong(PREF_LAST_SUCCESS_MS, lastSuccessMs)
+                            .putString(PREF_LAST_LOCATION_NAME, locationName).apply();
+                }
+            }
+            if (nativeSynced) {
+                emit("weather_success", "last_success_ms", lastSuccessMs);
+            } else {
+                error = "Stock widget sync unavailable";
+                emit("weather_native_sync_unavailable", "error", error);
+            }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             error = "cancelled";
@@ -659,7 +696,7 @@ public final class WeatherRuntime {
             if (SystemClock.elapsedRealtime() > locationExpiresAtElapsedMs) {
                 throw new IllegalStateException("GPS fix expired before geocoding");
             }
-            return getJson("https://api.bigdatacloud.net/data/reverse-geocode-client?"
+            return jsonFetcher.fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?"
                     + coordinateQuery + "&localityLanguage=" + URLEncoder.encode(language, "UTF-8"));
         } catch (Exception failure) {
             emit("weather_geocoder_fallback", "provider", "BigDataCloud",
@@ -676,7 +713,7 @@ public final class WeatherRuntime {
         return context.getString(R.string.current_location);
     }
 
-    private JSONObject getJson(String url) throws Exception {
+    private static JSONObject getJson(String url) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         connection.setRequestMethod("GET");
         connection.setConnectTimeout((int) CONNECT_TIMEOUT_MS);
@@ -720,6 +757,7 @@ public final class WeatherRuntime {
                 executor.isShutdown())) return;
         cancelScheduledLocked();
         scheduled = executor.schedule(() -> requestNow("scheduled"), Math.max(0L, delayMs), TimeUnit.MILLISECONDS);
+        emit("weather_scheduled", "delay_ms", Math.max(0L, delayMs));
     }
 
     static boolean canScheduleNormal(boolean started, boolean enabled, boolean inFlight,

@@ -69,7 +69,7 @@ public final class WeatherService extends Service {
                     (success, error) -> {
                         if (receiver == null) return;
                         Bundle result = new Bundle();
-                        result.putString("message", success ? "Weather updated" :
+                        result.putString("message", success ? (error.isEmpty() ? "Weather updated" : "Forecast updated; " + error) :
                                 "Weather update failed: " + error);
                         receiver.send(success ? 0 : 1, result);
                     });
@@ -85,7 +85,9 @@ public final class WeatherService extends Service {
 
     private void weatherEvent(String name, Object[] fields) {
         String status = null;
-        if ("weather_success".equals(name)) status = "Updated successfully";
+        if ("weather_success".equals(name)) status = "Forecast updated; stock widget synced";
+        else if ("weather_forecast_success".equals(name)) status = "Forecast updated";
+        else if ("weather_native_sync_unavailable".equals(name)) status = "Forecast updated; stock widget sync unavailable";
         else if ("weather_request".equals(name)) status = "Updating weather";
         else if ("weather_prerequisite_wait".equals(name)) {
             status = "Waiting for GPS location and/or validated internet";

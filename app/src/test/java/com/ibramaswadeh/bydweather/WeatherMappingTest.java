@@ -18,7 +18,159 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29)
 public class WeatherMappingTest {
+    @Test public void rejectsInvalidConditionsBeyondThePublishedHourlyWindow() throws Exception {
+        for (String field : new String[]{"weather_code", "is_day"}) {
+            JSONObject source = forecast();
+            JSONObject hourly = source.getJSONObject("hourly");
+            for (int i = 8; i < 64; i++) {
+                hourly.getJSONArray("time").put(LocalDateTime.of(2025, 10, 1, 12, 0).plusHours(i).toString());
+                for (String key : new String[]{"temperature_2m", "weather_code", "precipitation_probability",
+                        "wind_speed_10m", "wind_direction_10m", "is_day"}) {
+                    hourly.getJSONArray(key).put(hourly.getJSONArray(key).get(i % 8));
+                }
+            }
+            assertTrue(WeatherMapping.isComplete(payload(source).toString()));
+            hourly.getJSONArray(field).put(50, 0.5);
+            assertThrows("Invalid future " + field, org.json.JSONException.class, () -> payload(source));
+        }
+    }
+
     private static final long NOW_MS = 1_759_320_000_000L;
+
+    @Test public void representsTheComingEveningInTheDailyNightForecast() throws Exception {
+        JSONObject source = forecast();
+        JSONObject hourly = source.getJSONObject("hourly");
+        for (String key : new String[]{"time", "temperature_2m", "weather_code", "precipitation_probability",
+                "wind_speed_10m", "wind_direction_10m", "is_day"}) hourly.put(key, new JSONArray());
+        for (int i = 0; i < 24; i++) {
+            hourly.getJSONArray("time").put(LocalDateTime.of(2025,10,1,0,0).plusHours(i).toString());
+            hourly.getJSONArray("temperature_2m").put(25);
+            hourly.getJSONArray("weather_code").put(i == 21 ? 61 : i < 6 ? 95 : 0);
+            hourly.getJSONArray("precipitation_probability").put(0);
+            hourly.getJSONArray("wind_speed_10m").put(10);
+            hourly.getJSONArray("wind_direction_10m").put(90);
+            hourly.getJSONArray("is_day").put(i >= 6 && i < 18 ? 1 : 0);
+        }
+        JSONObject night = payload(source).getJSONObject("data").getJSONObject("dailys")
+                .getJSONArray("dailyweathers").getJSONObject(1).getJSONObject("conditionNight");
+        assertEquals(7, night.getInt("cnweatherid"));
+        assertEquals("Slight rain", night.getString("weathertext"));
+    }
+
+    @Test public void doesNotAssignHourlyAmountsToUnverifiedNativePeriodUnits() throws Exception {
+        JSONObject source = forecast();
+        for (String key : new String[]{"rain", "showers", "precipitation"}) {
+            source.getJSONObject("hourly").put(key, new JSONArray().put(1.2));
+        }
+        JSONObject data = payload(source).getJSONObject("data");
+        JSONObject day = data.getJSONObject("dailys").getJSONArray("dailyweathers")
+                .getJSONObject(1).getJSONObject("conditionDay");
+        assertFalse(day.has("rain"));
+        assertFalse(day.has("totalLiquid"));
+        assertEquals(1.2, data.getJSONObject("openMeteo").getJSONArray("hourly")
+                .getJSONObject(0).getDouble("rain"), 0.001);
+    }
+
+    @Test public void keepsSourcePrecisionUnitsAndOptionalValuesForTheAddedWidget() throws Exception {
+        JSONObject source = forecast();
+        source.getJSONObject("current").put("temperature_2m", 25.45);
+        source.put("current_units", new JSONObject().put("temperature_2m", "°C"));
+        source.put("hourly_units", new JSONObject().put("snowfall", "cm"));
+        source.put("daily_units", new JSONObject().put("precipitation_sum", "mm"));
+        source.getJSONObject("hourly").put("snowfall", new JSONArray().put(0.5));
+        source.getJSONObject("daily").put("precipitation_sum", new JSONArray().put(JSONObject.NULL).put(4.1));
+        JSONObject air = new JSONObject().put("current", new JSONObject().put("european_aqi", 35));
+        JSONObject data = new JSONObject(WeatherMapping.toBydJson(source, air, "Amman", "Amman", NOW_MS))
+                .getJSONObject("data");
+        JSONObject extension = data.getJSONObject("openMeteo");
+        assertEquals(25.45, extension.getJSONObject("current").getDouble("temperature_2m"), 0.001);
+        assertEquals("°C", extension.getJSONObject("units").getJSONObject("current").getString("temperature_2m"));
+        assertEquals("cm", extension.getJSONObject("units").getJSONObject("hourly").getString("snowfall"));
+        assertEquals(0.5, extension.getJSONArray("hourly").getJSONObject(0).getDouble("snowfall"), 0.001);
+        assertFalse(extension.getJSONArray("hourly").getJSONObject(1).has("snowfall"));
+        assertEquals(4.1, extension.getJSONArray("daily").getJSONObject(1).getDouble("precipitation_sum"), 0.001);
+        assertEquals("European AQI", extension.getString("airQualityStandard"));
+        assertEquals(35, extension.getJSONObject("airQuality").getInt("european_aqi"));
+        // Native pollution vocabulary is incompatible with these categories.
+        assertEquals("0", data.getJSONObject("aqi").get("lv"));
+        assertEquals(0, data.getJSONObject("dailys").getJSONArray("dailyweathers").getJSONObject(1).getInt("lv"));
+    }
+
+    @Test public void checksAllDailyRowsAndBothPeriodsBeforeAcceptingPayload() throws Exception {
+        for (String key : new String[]{"sunRise", "sunSet", "mintemp", "maxtemp", "publictime"}) {
+            JSONObject result = payload(forecast());
+            result.getJSONObject("data").getJSONObject("dailys").getJSONArray("dailyweathers")
+                    .getJSONObject(15).remove(key);
+            assertFalse(key, WeatherMapping.isComplete(result.toString()));
+        }
+        for (String section : new String[]{"conditionDay", "conditionNight"}) {
+            JSONObject result = payload(forecast());
+            result.getJSONObject("data").getJSONObject("dailys").getJSONArray("dailyweathers")
+                    .getJSONObject(7).getJSONObject(section).put("cnweatherid", -1);
+            assertFalse(section, WeatherMapping.isComplete(result.toString()));
+        }
+        JSONObject result = payload(forecast());
+        result.getJSONObject("data").getJSONObject("hourlys").getJSONArray("hourlyweathers")
+                .getJSONObject(7).put("cnweatherid", 0.4);
+        assertFalse(WeatherMapping.isComplete(result.toString()));
+    }
+
+    @Test public void rejectsNonIntegralAndUnknownConditionCodesInEverySourceSection() throws Exception {
+        for (double invalid : new double[]{0.4, 97.4, -1, 100, 52}) {
+            JSONObject source = forecast();
+            source.getJSONObject("current").put("weather_code", invalid);
+            assertThrows(org.json.JSONException.class, () -> payload(source));
+            JSONObject hourlySource = forecast();
+            hourlySource.getJSONObject("hourly").getJSONArray("weather_code").put(7, invalid);
+            assertThrows(org.json.JSONException.class, () -> payload(hourlySource));
+            JSONObject dailySource = forecast();
+            dailySource.getJSONObject("daily").getJSONArray("weather_code").put(15, invalid);
+            assertThrows(org.json.JSONException.class, () -> payload(dailySource));
+        }
+    }
+
+    @Test public void preservesEveryDocumentedConditionAndItsIntensity() throws Exception {
+        // Expected IDs come from the extracted native icon map; text from the official WMO table.
+        int[] wmo = {0,1,2,3,45,48,51,53,55,56,57,61,63,65,66,67,71,73,75,77,80,81,82,85,86,95,96,97,99};
+        int[] nativeId = {0,1,1,2,18,18,7,8,9,19,19,7,8,9,19,19,14,15,16,14,3,3,3,13,13,4,5,4,5};
+        String[] label = {"Clear sky","Mainly clear","Partly cloudy","Overcast","Fog","Depositing rime fog",
+                "Light drizzle","Moderate drizzle","Dense drizzle","Light freezing drizzle","Dense freezing drizzle",
+                "Slight rain","Moderate rain","Heavy rain","Light freezing rain","Heavy freezing rain",
+                "Slight snowfall","Moderate snowfall","Heavy snowfall","Snow grains","Slight rain showers",
+                "Moderate rain showers","Violent rain showers","Slight snow showers","Heavy snow showers",
+                "Thunderstorm","Thunderstorm with slight hail","Heavy thunderstorm","Thunderstorm with heavy hail"};
+        for (int n = 0; n < wmo.length; n++) {
+            JSONObject source = forecast();
+            source.getJSONObject("current").put("weather_code", wmo[n]);
+            for (int i = 0; i < 8; i++) source.getJSONObject("hourly").getJSONArray("weather_code").put(i, wmo[n]);
+            for (int i = 0; i < 16; i++) source.getJSONObject("daily").getJSONArray("weather_code").put(i, wmo[n]);
+            JSONObject data = payload(source).getJSONObject("data");
+            JSONObject[] conditions = {data.getJSONObject("condition"),
+                    data.getJSONObject("hourlys").getJSONArray("hourlyweathers").getJSONObject(0),
+                    data.getJSONObject("dailys").getJSONArray("dailyweathers").getJSONObject(1).getJSONObject("conditionDay"),
+                    data.getJSONObject("dailys").getJSONArray("dailyweathers").getJSONObject(1).getJSONObject("conditionNight")};
+            for (JSONObject condition : conditions) {
+                assertEquals("WMO " + wmo[n], nativeId[n], condition.getInt("cnweatherid"));
+                assertEquals(label[n], condition.getString("weathertext"));
+                assertEquals(wmo[n], condition.getInt("sourceWeatherCode"));
+            }
+        }
+    }
+
+    @Test public void acceptsHeavyThunderstormsThroughoutTheForecast() throws Exception {
+        JSONObject source = forecast();
+        source.getJSONObject("current").put("weather_code", 97);
+        for (int i = 0; i < 8; i++) source.getJSONObject("hourly").getJSONArray("weather_code").put(i, 97);
+        for (int i = 0; i < 16; i++) source.getJSONObject("daily").getJSONArray("weather_code").put(i, 97);
+        JSONObject result = payload(source);
+        JSONObject data = result.getJSONObject("data");
+        assertEquals(4, data.getJSONObject("condition").getInt("cnweatherid"));
+        assertEquals(4, data.getJSONObject("hourlys").getJSONArray("hourlyweathers")
+                .getJSONObject(1).getInt("cnweatherid"));
+        assertEquals(4, data.getJSONObject("dailys").getJSONArray("dailyweathers")
+                .getJSONObject(1).getJSONObject("conditionNight").getInt("cnweatherid"));
+        assertTrue(WeatherMapping.isComplete(result.toString()));
+    }
 
     @Test public void anchorsNativeDailyRecordsAtSunriseForPreDawnNightSelection() throws Exception {
         JSONObject source = forecast();
@@ -126,7 +278,7 @@ public class WeatherMappingTest {
         JSONArray days = data.getJSONObject("dailys").getJSONArray("dailyweathers");
         assertEquals(20, days.getJSONObject(0).getInt("aqivalue"));
         assertEquals(70, days.getJSONObject(1).getInt("aqivalue"));
-        assertEquals(4, days.getJSONObject(1).getInt("lv"));
+        assertEquals(0, days.getJSONObject(1).getInt("lv"));
         assertEquals(-1, days.getJSONObject(2).getInt("aqivalue"));
         assertEquals("--", days.getJSONObject(2).getString("aqivaluetext"));
         assertEquals(35, data.getJSONObject("aqi").getInt("aqivalue"));
@@ -141,20 +293,20 @@ public class WeatherMappingTest {
         JSONObject forecast = forecast();
         forecast.getJSONObject("daily").getJSONArray("weather_code").put(1, 95);
         JSONObject hourly = forecast.getJSONObject("hourly");
-        hourly.getJSONArray("weather_code").put(6, 61).put(7, 45);
-        hourly.getJSONArray("wind_speed_10m").put(6, 25);
-        hourly.getJSONArray("wind_direction_10m").put(6, 180);
+        hourly.getJSONArray("weather_code").put(7, 45).put(7, 61);
+        hourly.getJSONArray("wind_speed_10m").put(7, 25);
+        hourly.getJSONArray("wind_direction_10m").put(7, 180);
         for (String key : new String[]{"relative_humidity_2m", "cloud_cover", "precipitation",
                 "rain", "showers", "wind_gusts_10m"}) {
             hourly.put(key, new JSONArray());
         }
-        hourly.getJSONArray("relative_humidity_2m").put(6, 80);
-        hourly.getJSONArray("cloud_cover").put(6, 90);
-        hourly.getJSONArray("precipitation_probability").put(6, 75);
-        hourly.getJSONArray("precipitation").put(6, 2.5);
-        hourly.getJSONArray("rain").put(6, 1.2);
-        hourly.getJSONArray("showers").put(6, 0.8);
-        hourly.getJSONArray("wind_gusts_10m").put(6, 65);
+        hourly.getJSONArray("relative_humidity_2m").put(7, 80);
+        hourly.getJSONArray("cloud_cover").put(7, 90);
+        hourly.getJSONArray("precipitation_probability").put(7, 75);
+        hourly.getJSONArray("precipitation").put(7, 2.5);
+        hourly.getJSONArray("rain").put(7, 1.2);
+        hourly.getJSONArray("showers").put(7, 0.8);
+        hourly.getJSONArray("wind_gusts_10m").put(7, 65);
         JSONArray days = payload(forecast).getJSONObject("data")
                 .getJSONObject("dailys").getJSONArray("dailyweathers");
         JSONObject today = days.getJSONObject(1);
@@ -166,9 +318,9 @@ public class WeatherMappingTest {
         assertEquals("S", night.getString("winddir"));
         assertEquals(80, night.getInt("humidity"));
         assertEquals("90", night.get("cloudCover"));
-        assertEquals(75, night.getInt("precProb"));
-        assertEquals("2.0", night.get("rain"));
-        assertEquals("2.5", night.get("totalLiquid"));
+        assertEquals("75", night.get("precProb"));
+        assertFalse(night.has("rain"));
+        assertFalse(night.has("totalLiquid"));
         assertEquals("8", night.get("windGustPow"));
         assertFalse(day.has("humidity"));
         assertFalse(night.has("rainProb"));
@@ -193,8 +345,8 @@ public class WeatherMappingTest {
         JSONObject today = result.getJSONObject(1);
         assertEquals("29", today.get("realFeelTempMax"));
         assertEquals("16", today.get("realFeelTempMin"));
-        assertEquals(1016, today.getInt("pressure"));
-        assertEquals(16, today.getInt("visibility"));
+        assertFalse(today.has("pressure"));
+        assertFalse(today.has("visibility"));
         assertEquals(Instant.parse("2025-10-01T18:31:00Z").toEpochMilli(), today.getLong("moonRise"));
         assertEquals(Instant.parse("2025-10-01T08:34:00Z").toEpochMilli(), today.getLong("moonSet"));
         assertEquals("2025-10-01T11:34:00+03:00", today.getString("moonSetFmt"));

@@ -1,0 +1,15 @@
+# Complete Weather Mapping Implementation Plan
+
+Goal: accurate independent hourly icons, exhaustive documented conditions and native-field coverage, verified signed APK 1.1.1.
+
+Spec: [full-mapping-spec.md](full-mapping-spec.md). Java 17, Android API 26+, framework RemoteViews, existing org.json/Robolectric; no new product dependencies. Preserve BigDataCloud district/city cleanup, provider compatibility, existing service and signing/version.
+
+## Tasks
+
+1. WeatherMapping.java / WeatherMappingTest.java: first reproduce rejected WMO97 through toBydJson, then add native thunderstorm4. Red/green exhaustive known-code descriptions and IDs through current/hourly/daily period output. Preserve source WMO values. Reject fractional/unknown codes and validate every emitted day, hour and condition before writes. Native type/metadata corrections and EU AQI scale separation need behavioral regressions.
+2. WeatherWidgetProvider.java, layout/widget_weather.xml, layout/widget_forecast_item.xml, xml/weather_widget_info.xml, drawable/weather_*.xml and manifest: test public onUpdate and inflated widget views. Independent hourly clear icons must be moon at03:00 and sun at07:00 in the same update; future daily clear icons remain sunny. Add single RemoteViews renderer inside the provider; native condition category icons plus solar markers/no-data. Show accessible condition labels, units, forecast release time, empty and stale states. Render seven upcoming hours and seven days. Native-host research proved the stock allowlist blocks added widgets, so share the renderer as an in-app forecast preview and provide supported-host pinning/fallback explanation.
+3. WeatherRuntime.java: persist validated fetched payload once to default preferences, refresh new widgets, and independently synchronize the stock provider. Provider failure must not starve the new widget or overwrite good native data. Cache never accepts incomplete payloads. Additional metrics belong to data.openMeteo with explicit original units, avoiding unproven native-unit conversions. Test through approved public seams and native replay.
+4. Trace tests: actual native DTO/icon-method replay for every code/category and day/night; actual widget callback with mapped provider-shaped fixtures. Run complete testDebugUnitTest, inspect zero failures/skips, then independent spec/quality reviews, codebase design review, and original-request review in that order. Fix material findings with regression tests and rerun affected suite.
+5. Publish reviewed source on the existing draft branch, run CI test/lintRelease/assembleRelease, verify artifact source/digest, sign with supplied certificate, verify package/version/cert/zip alignment and deliver APK plus mapping and review reports.
+
+Review focus: mixed day/night rows across sunrise, stale data across midnight, malformed/non-integral codes anywhere in arrays, optional air-quality/metric gaps, hosts lacking native BYD provider. Expected behavior is accurate per-row icons/date labels, explicit staleness/unavailable units, preservation of last-good cache, and independent new-widget display.

@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.Iterator;
 
 /** Converts Open-Meteo forecasts to BYD weather JSON. */
 public final class WeatherMapping {
@@ -41,7 +42,12 @@ public final class WeatherMapping {
         String province = locationText(location, "principalSubdivision");
         if (country != null) metadata.put("countryname", country);
         if (countryCode != null) metadata.put("countryCode", countryCode);
-        if (province != null) metadata.put("provincename", province);
+        if (province != null) {
+            metadata.put("provincename", province)
+                    .put("administrativearea", new JSONObject().put("localizedname", province))
+                    .put("supplementalAdminAreas", new JSONArray()
+                            .put(new JSONObject().put("localizedName", province)));
+        }
         if (city != null) metadata.put("parentcity", city);
         return result.toString();
     }
@@ -128,10 +134,15 @@ public final class WeatherMapping {
                 || !hasRequiredForecastCounts(hours.length(), days.length())) {
             throw new JSONException("incomplete forecast arrays");
         }
+        // Daily period sampling can use hours beyond the displayed 48-hour window.
+        for (int i = 0; i < hours.length(); i++) {
+            requireWeatherCode(hourly.getJSONArray("weather_code").opt(i));
+            requireDayFlagAt(hourly, i);
+        }
         String city = nonEmpty(cityName, "Location");
         String english = nonEmpty(englishCityName, city);
         long update = time.parseRequiredTime(current, "time");
-        int code = weatherId(requireNumber(current, "weather_code"));
+        int code = weatherId(requireWeatherCode(current.opt("weather_code")));
         int temperature = requireNumber(current, "temperature_2m");
         int humidity = requireNumber(current, "relative_humidity_2m");
         int pressure = requireNumber(current, "pressure_msl");
@@ -148,6 +159,7 @@ public final class WeatherMapping {
                 .put("weatherid", code)
                 .put("zmweatherid", code)
                 .put("weathertext", weatherText(current.optInt("weather_code", -1)))
+                .put("sourceWeatherCode", current.getInt("weather_code"))
                 .put("uVIndex", uvIndex)
                 .put("humidity", humidity)
                 .put("pressure", pressure)
@@ -162,9 +174,12 @@ public final class WeatherMapping {
                 .put("cloudCover", requireNumber(current, "cloud_cover"))
                 .put("precipitation", requireDouble(current, "precipitation"))
                 .put("updatetime", update)
-                .put("updatetimeFmt", time.formatTime(update));
+                .put("updatetimeFmt", time.formatTime(update))
+                .put("expiretime", nowMs + 6 * 60 * 60 * 1000L)
+                .put("desc", ATTRIBUTION).put("mobilelink", "https://open-meteo.com/");
 
-        JSONObject hourlyData = new JSONObject().put("expiretime", nowMs + 6 * 60 * 60 * 1000L);
+        JSONObject hourlyData = new JSONObject().put("expiretime", nowMs + 6 * 60 * 60 * 1000L)
+                .put("mobilelink", "https://open-meteo.com/");
         JSONArray hourlyItems = new JSONArray();
         long firstHour = Instant.ofEpochMilli(update).atZone(time.zone)
                 .withMinute(0).withSecond(0).withNano(0).toInstant().toEpochMilli();
@@ -177,7 +192,7 @@ public final class WeatherMapping {
         int hourlyEnd = Math.min(hours.length(), hourlyStart + 48);
         for (int i = hourlyStart; i < hourlyEnd; i++) {
             long date = time.parseRequiredTimeAt(hours, i, "hourly time");
-            int hourlyCode = weatherId(requireNumberAt(hourly, "weather_code", i));
+            int hourlyCode = weatherId(requireWeatherCode(hourly.getJSONArray("weather_code").opt(i)));
             if (hourlyCode < 0) throw new JSONException("unsupported hourly weather code");
             boolean isDay = requireDayFlagAt(hourly, i);
             JSONObject item = new JSONObject()
@@ -186,6 +201,8 @@ public final class WeatherMapping {
                     .put("cnweatherid", hourlyCode)
                     .put("weatherid", hourlyCode)
                     .put("zmweatherid", hourlyCode)
+                    .put("weathertext", weatherText(requireNumberAt(hourly, "weather_code", i)))
+                    .put("sourceWeatherCode", requireNumberAt(hourly, "weather_code", i))
                     .put("rainprobability", requireNumberAt(hourly, "precipitation_probability", i))
                     .put("wd", windDirection(requireNumberAt(hourly, "wind_direction_10m", i)))
                     .put("wp", windLevel(requireNumberAt(hourly, "wind_speed_10m", i)))
@@ -205,7 +222,7 @@ public final class WeatherMapping {
         JSONArray dailyItems = new JSONArray();
         for (int i = 0; i < REQUIRED_DAILY_COUNT; i++) {
             long publicTime = time.parseRequiredTimeAt(days, i, "daily time");
-            int dailyCode = weatherId(requireNumberAt(daily, "weather_code", i));
+            int dailyCode = weatherId(requireWeatherCode(daily.getJSONArray("weather_code").opt(i)));
             if (dailyCode < 0) throw new JSONException("unsupported daily weather code");
             long sunrise = time.parseRequiredTimeAt(daily, "sunrise", i);
             long sunset = time.parseRequiredTimeAt(daily, "sunset", i);
@@ -214,6 +231,7 @@ public final class WeatherMapping {
                     .put("weatherid", dailyCode)
                     .put("zmweatherid", dailyCode)
                     .put("weathertext", weatherText(requireNumberAt(daily, "weather_code", i)))
+                    .put("sourceWeatherCode", requireNumberAt(daily, "weather_code", i))
                     .put("windlevel", windLevel(requireNumberAt(daily, "wind_speed_10m_max", i)))
                     .put("windspeed", requireNumberAt(daily, "wind_speed_10m_max", i))
                     .put("winddir", windDirection(requireNumberAt(daily, "wind_direction_10m_dominant", i)));
@@ -227,9 +245,10 @@ public final class WeatherMapping {
                     .put("publictimeFmt", time.formatDate(publicTime))
                     .put("mintemp", requireNumberAt(daily, "temperature_2m_min", i))
                     .put("maxtemp", requireNumberAt(daily, "temperature_2m_max", i))
-                    .put("lv", aqiLevelNumber(dailyAqi))
+                    .put("lv", 0)
                     .put("aqivalue", dailyAqi)
                     .put("aqivaluetext", dailyAqi < 0 ? "--" : String.valueOf(dailyAqi))
+                    .put("source", ATTRIBUTION).put("mobilelink", "https://open-meteo.com/")
                     .put("uvIndex", dailyUv)
                     .put("uvIndexText", String.valueOf(dailyUv))
                     .put("sunRise", sunrise)
@@ -248,10 +267,10 @@ public final class WeatherMapping {
                 .put("aqivalue", aqi)
                 .put("aqivaluetext", aqi < 0 ? "--" : String.valueOf(aqi))
                 .put("aqidesc", aqiDescription(aqi))
-                .put("lv", aqiLevelNumber(aqi))
+                .put("lv", "0")
                 .put("pm25", airQualityNumber(airQuality, "pm2_5"))
                 .put("pm10", airQualityNumber(airQuality, "pm10"))
-                .put("updatetime", nowMs);
+                .put("updatetime", nowMs).put("mobilelink", "https://open-meteo.com/");
 
         JSONObject data = new JSONObject()
                 .put("city", new JSONObject()
@@ -268,6 +287,7 @@ public final class WeatherMapping {
                 .put("aqidays", new JSONArray())
                 .put("alarm", new JSONArray())
                 .put("liveInfos", new JSONArray())
+                .put("openMeteo", sourceData(forecast, airQuality, hourlyStart, hourlyEnd))
                 .put("weatherDesc", ATTRIBUTION)
                 .put("mobilelink", "https://open-meteo.com/");
         return new JSONObject()
@@ -284,7 +304,7 @@ public final class WeatherMapping {
         JSONObject result = new JSONObject(fallback.toString());
         JSONArray hours = hourly.getJSONArray("time");
         String date = time.formatDate(publicTime);
-        long target = LocalDate.parse(date).atTime(day ? 12 : 0, 0)
+        long target = LocalDate.parse(date).atTime(day ? 12 : 21, 0)
                 .atZone(time.zone).toInstant().toEpochMilli();
         int selected = -1;
         long nearest = Long.MAX_VALUE;
@@ -292,7 +312,8 @@ public final class WeatherMapping {
             long hour = time.parseTime(hours.optString(i, ""));
             Double flag = optionalNumberAt(hourly, "is_day", i);
             Double code = optionalNumberAt(hourly, "weather_code", i);
-            if (hour <= 0 || !date.equals(time.formatDate(hour)) || flag == null
+            if (hour <= 0 || (!day && Instant.ofEpochMilli(hour).atZone(time.zone).getHour() < 12)
+                    || !date.equals(time.formatDate(hour)) || flag == null
                     || flag != (day ? 1 : 0) || code == null || code != Math.rint(code)
                     || weatherId(code.intValue()) < 0
                     || optionalNumberAt(hourly, "wind_speed_10m", i) == null
@@ -308,21 +329,16 @@ public final class WeatherMapping {
         int code = weatherId(wmo);
         int speed = requireNumberAt(hourly, "wind_speed_10m", selected);
         result.put("cnweatherid", code).put("weatherid", code).put("zmweatherid", code)
-                .put("weathertext", weatherText(wmo)).put("windspeed", speed)
+                .put("weathertext", weatherText(wmo)).put("sourceWeatherCode", wmo).put("windspeed", speed)
                 .put("windlevel", windLevel(speed))
                 .put("winddir", windDirection(requireNumberAt(hourly, "wind_direction_10m", selected)));
         Double humidity = optionalNumberAt(hourly, "relative_humidity_2m", selected);
         Double cloud = optionalNumberAt(hourly, "cloud_cover", selected);
         Double probability = optionalNumberAt(hourly, "precipitation_probability", selected);
-        Double rain = optionalNumberAt(hourly, "rain", selected);
-        Double showers = optionalNumberAt(hourly, "showers", selected);
-        Double precipitation = optionalNumberAt(hourly, "precipitation", selected);
         Double gust = optionalNumberAt(hourly, "wind_gusts_10m", selected);
         if (humidity != null) result.put("humidity", Math.round(humidity));
         if (cloud != null) result.put("cloudCover", String.valueOf(Math.round(cloud)));
-        if (probability != null) result.put("precProb", Math.round(probability));
-        if (rain != null && showers != null) result.put("rain", String.valueOf(rain + showers));
-        if (precipitation != null) result.put("totalLiquid", String.valueOf(precipitation));
+        if (probability != null) result.put("precProb", String.valueOf(Math.round(probability)));
         if (gust != null) result.put("windGustPow", String.valueOf(windLevel((int) Math.round(gust))));
         return result;
     }
@@ -331,12 +347,8 @@ public final class WeatherMapping {
             long publicTime, ForecastTime time) throws JSONException {
         Double apparentMax = optionalNumberAt(daily, "apparent_temperature_max", index);
         Double apparentMin = optionalNumberAt(daily, "apparent_temperature_min", index);
-        Double pressure = optionalNumberAt(daily, "pressure_msl_mean", index);
-        Double visibility = optionalNumberAt(daily, "visibility_min", index);
         if (apparentMax != null) item.put("realFeelTempMax", String.valueOf(Math.round(apparentMax)));
         if (apparentMin != null) item.put("realFeelTempMin", String.valueOf(Math.round(apparentMin)));
-        if (pressure != null) item.put("pressure", Math.round(pressure));
-        if (visibility != null) item.put("visibility", Math.round(visibility / 1000));
         long moonrise = time.optionalTimeAt(daily, "moonrise", index);
         long moonset = time.optionalTimeAt(daily, "moonset", index);
         if (moonrise > 0) item.put("moonRise", moonrise).put("moonRiseFmt", time.formatOffsetTime(moonrise));
@@ -345,6 +357,53 @@ public final class WeatherMapping {
         long selectorTime = moonset > 0 && time.formatDate(moonset).equals(time.formatDate(publicTime))
                 ? moonset : publicTime;
         item.put("moonSetFmt", time.formatOffsetTime(selectorTime));
+    }
+
+    /** Owned extension: original units/precision, rather than guessed proprietary native fields. */
+    private static JSONObject sourceData(JSONObject forecast, JSONObject air, int firstHour, int endHour)
+            throws JSONException {
+        JSONObject result = new JSONObject().put("schemaVersion", 1)
+                .put("units", new JSONObject()
+                        .put("current", sourceObject(forecast, "current_units"))
+                        .put("hourly", sourceObject(forecast, "hourly_units"))
+                        .put("daily", sourceObject(forecast, "daily_units"))
+                        .put("airQuality", sourceObject(air, "current_units")))
+                .put("current", sourceObject(forecast, "current"))
+                .put("hourly", sourceRows(forecast.getJSONObject("hourly"), firstHour, endHour))
+                .put("daily", sourceRows(forecast.getJSONObject("daily"), 0, REQUIRED_DAILY_COUNT))
+                .put("airQualityStandard", "European AQI")
+                .put("airQuality", sourceObject(air, "current"));
+        JSONArray aqiDays = new JSONArray();
+        ForecastTime time = new ForecastTime(forecast.getString("timezone"));
+        JSONArray dates = forecast.getJSONObject("daily").getJSONArray("time");
+        for (int i = 0; i < REQUIRED_DAILY_COUNT; i++) {
+            int value = dailyAirQualityValue(air, time.parseRequiredTimeAt(dates, i, "daily time"), time);
+            JSONObject day = new JSONObject().put("date", dates.getString(i));
+            if (value >= 0) day.put("european_aqi", value).put("description", aqiDescription(value));
+            aqiDays.put(day);
+        }
+        return result.put("airQualityDaily", aqiDays);
+    }
+
+    private static JSONObject sourceObject(JSONObject source, String key) {
+        JSONObject value = source == null ? null : source.optJSONObject(key);
+        return value == null ? new JSONObject() : value;
+    }
+
+    private static JSONArray sourceRows(JSONObject source, int first, int end) throws JSONException {
+        JSONArray result = new JSONArray();
+        for (int i = first; i < end; i++) {
+            JSONObject row = new JSONObject();
+            Iterator<String> keys = source.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                JSONArray values = source.optJSONArray(key);
+                Object value = values == null ? null : values.opt(i);
+                if (value != null && value != JSONObject.NULL) row.put(key, value);
+            }
+            result.put(row);
+        }
+        return result;
     }
 
     public static boolean isComplete(String json) {
@@ -364,7 +423,7 @@ public final class WeatherMapping {
             if (city == null || text(city, "name") == null || text(city, "englishCityName") == null
                     || condition == null || !(condition.opt("isdaynight") instanceof Boolean)
                     || !numberPresent(condition, "temperature")
-                    || !numberPresent(condition, "cnweatherid") || text(condition, "weathertext") == null
+                    || !validNativeCode(condition) || text(condition, "weathertext") == null
                     || !numberPresent(condition, "uVIndex") || !numberPresent(condition, "windspeed")
                     || !numberPresent(condition, "windlevel") || text(condition, "winddir") == null
                     || text(condition, "winddirtext") == null || !numberPresent(condition, "visibility")
@@ -374,22 +433,31 @@ public final class WeatherMapping {
                     || !hasRequiredForecastCounts(hours.length(), days.length())) {
                 return false;
             }
-            JSONObject firstDay = days.optJSONObject(0);
-            if (firstDay == null || !numberPresent(firstDay, "publictime")
-                    || text(firstDay, "publictimeFmt") == null
-                    || !numberPresent(firstDay, "mintemp") || !numberPresent(firstDay, "maxtemp")
-                    || !numberPresent(firstDay, "lv") || !numberPresent(firstDay, "sunRise")
-                    || !numberPresent(firstDay, "sunSet") || !firstDay.has("conditionDay")) return false;
-            JSONObject conditionDay = firstDay.optJSONObject("conditionDay");
-            if (conditionDay == null || !numberPresent(conditionDay, "cnweatherid")
-                    || text(conditionDay, "weathertext") == null) return false;
+            long previousAnchor = 0;
+            for (int i = 0; i < days.length(); i++) {
+                JSONObject day = days.optJSONObject(i);
+                if (day == null || !numberPresent(day, "publictime")
+                        || day.optLong("publictime") <= previousAnchor
+                        || text(day, "publictimeFmt") == null
+                        || !numberPresent(day, "mintemp") || !numberPresent(day, "maxtemp")
+                        || !numberPresent(day, "lv") || !numberPresent(day, "sunRise")
+                        || !numberPresent(day, "sunSet") || day.optLong("sunRise") <= 0
+                        || day.optLong("sunSet") <= day.optLong("sunRise")) return false;
+                previousAnchor = day.getLong("publictime");
+                for (String key : new String[]{"conditionDay", "conditionNight"}) {
+                    JSONObject period = day.optJSONObject(key);
+                    if (!validNativeCode(period) || text(period, "weathertext") == null) return false;
+                }
+            }
+            long previousHour = 0;
             for (int i = 0; i < hours.length(); i++) {
                 JSONObject item = hours.optJSONObject(i);
                 if (item == null || !numberPresent(item, "date") || !numberPresent(item, "temp")
-                        || !numberPresent(item, "cnweatherid")
+                        || item.optLong("date") <= previousHour || !validNativeCode(item)
                         || !(item.opt("isdaynight") instanceof Boolean)
                         || !(item.opt("Isdaynight") instanceof Boolean)
                         || !item.opt("isdaynight").equals(item.opt("Isdaynight"))) return false;
+                previousHour = item.getLong("date");
             }
             return true;
         } catch (JSONException | RuntimeException ignored) {
@@ -399,6 +467,17 @@ public final class WeatherMapping {
 
     public static int clampIntervalMinutes(int value) {
         return Math.max(5, Math.min(180, value));
+    }
+
+    private static boolean validNativeCode(JSONObject condition) {
+        Object value = condition == null ? null : condition.opt("cnweatherid");
+        if (!(value instanceof Number)) return false;
+        double code = ((Number) value).doubleValue();
+        if (!Double.isFinite(code) || code != Math.rint(code)) return false;
+        return switch ((int) code) {
+            case 0,1,2,3,4,5,7,8,9,13,14,15,16,18,19 -> true;
+            default -> false;
+        };
     }
 
     static boolean hasRequiredForecastCounts(int hourlyCount, int dailyCount) {
@@ -421,21 +500,44 @@ public final class WeatherMapping {
         if (openMeteoCode == 77) return 14;
         if (openMeteoCode >= 80 && openMeteoCode <= 82) return 3;
         if (openMeteoCode >= 85 && openMeteoCode <= 86) return 13;
-        if (openMeteoCode == 95) return 4;
+        if (openMeteoCode == 95 || openMeteoCode == 97) return 4;
         if (openMeteoCode == 96 || openMeteoCode == 99) return 5;
         return -1;
     }
 
     private static String weatherText(int code) {
-        if (code == 0) return "Clear";
-        if (code == 1 || code == 2) return "Cloudy";
-        if (code == 3) return "Overcast";
-        if (code == 45 || code == 48) return "Fog";
-        if (code == 56 || code == 57 || code == 66 || code == 67) return "Freezing rain";
-        if (code >= 51 && code <= 65 || code >= 80 && code <= 82) return "Rain";
-        if (code >= 71 && code <= 77 || code >= 85 && code <= 86) return "Snow";
-        if (code >= 95) return "Thunderstorm";
-        return "Unknown";
+        return switch (code) {
+            case 0 -> "Clear sky";
+            case 1 -> "Mainly clear";
+            case 2 -> "Partly cloudy";
+            case 3 -> "Overcast";
+            case 45 -> "Fog";
+            case 48 -> "Depositing rime fog";
+            case 51 -> "Light drizzle";
+            case 53 -> "Moderate drizzle";
+            case 55 -> "Dense drizzle";
+            case 56 -> "Light freezing drizzle";
+            case 57 -> "Dense freezing drizzle";
+            case 61 -> "Slight rain";
+            case 63 -> "Moderate rain";
+            case 65 -> "Heavy rain";
+            case 66 -> "Light freezing rain";
+            case 67 -> "Heavy freezing rain";
+            case 71 -> "Slight snowfall";
+            case 73 -> "Moderate snowfall";
+            case 75 -> "Heavy snowfall";
+            case 77 -> "Snow grains";
+            case 80 -> "Slight rain showers";
+            case 81 -> "Moderate rain showers";
+            case 82 -> "Violent rain showers";
+            case 85 -> "Slight snow showers";
+            case 86 -> "Heavy snow showers";
+            case 95 -> "Thunderstorm";
+            case 96 -> "Thunderstorm with slight hail";
+            case 97 -> "Heavy thunderstorm";
+            case 99 -> "Thunderstorm with heavy hail";
+            default -> "Unknown";
+        };
     }
 
     private static boolean requireDayFlag(JSONObject current) throws JSONException {
@@ -444,6 +546,16 @@ public final class WeatherMapping {
         double flag = ((Number) value).doubleValue();
         if (flag != 0 && flag != 1) throw new JSONException("invalid is_day");
         return flag == 1;
+    }
+
+    private static int requireWeatherCode(Object value) throws JSONException {
+        if (!(value instanceof Number)) throw new JSONException("missing weather code");
+        double code = ((Number) value).doubleValue();
+        if (!Double.isFinite(code) || code != Math.rint(code)
+                || code < 0 || code > 99 || weatherId((int) code) < 0) {
+            throw new JSONException("unsupported weather code");
+        }
+        return (int) code;
     }
 
     private static boolean requireDayFlagAt(JSONObject hourly, int index) throws JSONException {
@@ -637,11 +749,6 @@ public final class WeatherMapping {
         JSONObject current = airQuality.optJSONObject("current");
         if (current != null && current.has(key)) return number(current, key, -1);
         return numberAt(airQuality, key, 0, -1);
-    }
-
-    private static int aqiLevelNumber(int value) {
-        if (value < 0) return 0;
-        return value <= 20 ? 1 : value <= 40 ? 2 : value <= 60 ? 3 : value <= 80 ? 4 : value <= 100 ? 5 : 6;
     }
 
     private static String aqiDescription(int value) {

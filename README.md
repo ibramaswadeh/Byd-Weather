@@ -1,13 +1,16 @@
 # BYD Weather
 
-Keeps the stock BYD weather widget updated with local forecasts from
-[Open-Meteo](https://open-meteo.com/). Runs as a background service on compatible
-Chinese DiLink head units, with a small settings screen for permissions and
-refresh controls.
+Provides local forecasts from [Open-Meteo](https://open-meteo.com/) inside BYD
+Weather and through its own Android widget. It also updates the stock BYD weather
+provider on compatible Chinese DiLink head units. A background service handles
+refreshes, with controls for permissions and the refresh interval.
 
 ## Features
 
-- Current weather, hourly and daily forecasts, and air quality when available.
+- All 29 documented WMO conditions with readable intensity and precipitation descriptions.
+- Current weather, seven upcoming hours, seven daily forecasts and air quality when available.
+- Independent hourly day/night icons in the BYD Weather app and added widget.
+- Precipitation in mm, snowfall depth in cm, solar times and named European AQI.
 - Widget location names from BigDataCloud, formatted as `district, city`.
 - Automatic updates every 15 minutes by default; adjustable from 5 to 180 minutes.
 - Optional startup with the car and a persistent status notification.
@@ -22,12 +25,16 @@ a particular car or firmware.
 
 The head unit must provide:
 
-- Access to the stock BYD WeatherData provider and widget.
 - GPS that exposes fresh NMEA messages to the app.
 - Precise location permission, plus background location permission for startup
   where Android requires it.
 - An internet connection that Android recognizes as usable.
 - Permission to start and run in the background through DiLink's app manager.
+
+Stock-widget synchronization additionally requires access to the BYD WeatherData
+provider. The owned forecast works without that provider. The supplied DiLink3.0
+launcher has a compiled widget allowlist that excludes BYD Weather; use the
+in-app forecast or a compatible launcher for the new widget.
 
 The app does not require root, ADB, or a weather API key.
 
@@ -42,10 +49,12 @@ The app does not require root, ADB, or a weather API key.
    Open **Open BYD background-start settings** and allow startup and background
    operation in DiLink's app manager.
 4. Turn on GPS, connect to the internet, then tap **Update weather now**.
-   Check the app's status and last successful update time, and confirm the
-   stock widget changes.
+   Check the forecast and its update time. Stock-widget synchronization has
+   its own status and timestamp.
 5. Set your preferred refresh interval.
-6. Optional: tap **Enable stock weather refresh button** and enable
+6. Optional: tap **Add BYD Weather widget** on a compatible launcher. The original
+   DiLink launcher does not allow this added widget; the same forecast is inside the app.
+7. Optional: tap **Enable stock weather refresh button** and enable
    **BYD Weather refresh button** in Android Accessibility settings.
 
 Accessibility is only needed for updates triggered by the stock widget's button.
@@ -67,29 +76,43 @@ lookups use **Current location** and allow the weather update to continue. No
 geocoding API key is needed. See the [BigDataCloud research note](docs/research/bigdatacloud-geocoding.md)
 for the response fields and the fresh-device-location requirement.
 
-After fetching weather, the app writes it to the BYD provider, reads it back,
-and requests a widget refresh. A successful update advances the saved timestamp
-and saves the written location label, displayed in the app’s status.
+After fetching weather, the app validates and caches the complete payload, updates
+its forecast views, then attempts stock-provider synchronization with readback.
+Forecast success follows your selected interval even if stock sync is unavailable.
+The forecast timestamp/location and verified stock-sync timestamp/location are
+recorded separately. Failed provider writes attempt to restore the previous data.
 
-Current weather and hourly forecasts include an `isdaynight` boolean derived
-from Open-Meteo's `is_day`: `true` means daytime and `false` means night. A missing
-or invalid current flag fails the update, preserving the previous weather data.
-The current flag follows the existing hourly convention; the stock widget's
-support for that current field still needs verification on a physical head unit.
-Hourly output includes both known flag spellings and up to 48 hours beginning
-at the current forecast hour. Daily day/night conditions use separate hourly
-samples; available feels-like ranges, pressure, visibility, lunar events and
-daily European AQI are converted to the known widget fields. Optional missing
-values are omitted. Wind force uses Beaufort bands while speeds remain km/h.
+Current weather and each hourly forecast include Boolean `isdaynight` flags from
+Open-Meteo's `is_day`: `true` means daytime and `false` means night. Invalid flags
+or unsupported/fractional condition codes anywhere in the hourly source reject
+the update. Hourly output retains both known flag spellings and up to48hours
+beginning at the current forecast hour. Daily day/night conditions use separate
+hourly samples; night summaries use the coming evening rather than early morning.
+Wind force uses Beaufort bands while speeds remain km/h.
+
+The original firmware's stock hourly renderer uses one global night state and
+ignores those hourly flags. Verified sunrise anchors correct its pre-dawn global
+state, but mixed-night/day rows still require a renderer change. The owned
+renderer reads each hour's flag and also appears inside BYD Weather. No stock
+launcher/renderer modification or physical-car test is claimed.
+
+Verified native fields receive compatible types/conversions. Additional provider
+metrics retain their source precision and units in `data.openMeteo`; the owned
+widget consumes precipitation/snow amounts. European AQI is explicitly named;
+native Chinese-scale pollution labels are suppressed. Official warnings, radar,
+lifestyle advice, native administrative IDs and unverified unit conversions are
+not fabricated. The [complete firmware field audit](docs/research/full-weather-mapping.md)
+and [371-declaration inventory](docs/research/native-field-coverage.json) explain
+every mapped, derived, compatibility, unavailable, unverified and unused field.
 
 See the [implementation and remaining limits](docs/research/widget-mapping-implementation.md),
 [full public widget attribute inventory](docs/research/byd-widget-schema.md), and
 [Open-Meteo feature research](docs/research/open-meteo-widget-features.md). The
 native schema and every added field still need verification on a physical car.
 
-GPS and weather-fetch failures keep the previous weather data. Failed updates
-leave the saved success timestamp unchanged. Failed provider writes attempt
-to restore the previous data.
+GPS and weather-fetch failures preserve the previous validated forecast and fetch
+timestamp. Only verified native provider synchronization advances its own success
+timestamp. The owned widget marks data stale after an hour.
 
 Failures retry after five minutes when prerequisites remain available. Otherwise,
 the app waits for GPS or network recovery; revoked location permission must be
@@ -102,10 +125,13 @@ the weather update.
 | --- | --- |
 | Waiting for GPS or internet | Enable GPS, grant precise location, and check that Android recognizes the internet connection. |
 | Raw GPS unavailable | The head unit must expose fresh NMEA messages. The app retries after five minutes. |
-| Update failed | Check the reported error, network access, and access to the BYD weather provider. |
+| Update failed | Check the reported error, GPS and network access. |
+| Forecast updated; stock widget sync unavailable | The forecast is usable; stock-provider access or readback failed. |
+| Added widget cannot be placed | The original launcher filters added providers. View the forecast in BYD Weather or use a compatible host. |
+| Stock hourly sun/moon icons disagree | The stock renderer applies one night state to the entire row. Use the owned forecast for per-hour icons. |
 | Updates stop after reboot | Check both startup switches, background location permission, and DiLink's background settings. |
 | A settings screen is unavailable | Open the relevant system settings from the car launcher. |
-| Last successful time stays unchanged | A GPS fix or weather request alone is not enough; the provider update must succeed. |
+| Stock sync time stays unchanged | Native provider readback must succeed; forecast updates have a separate timestamp. |
 
 Provider access, GPS delivery, and automatic startup depend on DiLink firmware.
 Automated tests cover parsing, navigation, and icon rendering; they do not
