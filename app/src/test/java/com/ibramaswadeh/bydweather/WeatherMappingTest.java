@@ -67,31 +67,16 @@ public class WeatherMappingTest {
                 .getJSONObject(1).getJSONObject("conditionDay");
         assertFalse(day.has("rain"));
         assertFalse(day.has("totalLiquid"));
-        assertEquals(1.2, data.getJSONObject("openMeteo").getJSONArray("hourly")
-                .getJSONObject(0).getDouble("rain"), 0.001);
     }
 
-    @Test public void keepsSourcePrecisionUnitsAndOptionalValuesForTheAddedWidget() throws Exception {
+    @Test public void preservesNativePrecipitationPrecisionWithoutApplyingEuropeanCategoriesAsChinese() throws Exception {
         JSONObject source = forecast();
-        source.getJSONObject("current").put("temperature_2m", 25.45);
-        source.put("current_units", new JSONObject().put("temperature_2m", "°C"));
-        source.put("hourly_units", new JSONObject().put("snowfall", "cm"));
-        source.put("daily_units", new JSONObject().put("precipitation_sum", "mm"));
-        source.getJSONObject("hourly").put("snowfall", new JSONArray().put(0.5));
-        source.getJSONObject("daily").put("precipitation_sum", new JSONArray().put(JSONObject.NULL).put(4.1));
+        source.getJSONObject("current").put("precipitation", 0.125);
         JSONObject air = new JSONObject().put("current", new JSONObject().put("european_aqi", 35));
         JSONObject data = new JSONObject(WeatherMapping.toBydJson(source, air, "Amman", "Amman", NOW_MS))
                 .getJSONObject("data");
-        JSONObject extension = data.getJSONObject("openMeteo");
-        assertEquals(25.45, extension.getJSONObject("current").getDouble("temperature_2m"), 0.001);
-        assertEquals("°C", extension.getJSONObject("units").getJSONObject("current").getString("temperature_2m"));
-        assertEquals("cm", extension.getJSONObject("units").getJSONObject("hourly").getString("snowfall"));
-        assertEquals(0.5, extension.getJSONArray("hourly").getJSONObject(0).getDouble("snowfall"), 0.001);
-        assertFalse(extension.getJSONArray("hourly").getJSONObject(1).has("snowfall"));
-        assertEquals(4.1, extension.getJSONArray("daily").getJSONObject(1).getDouble("precipitation_sum"), 0.001);
-        assertEquals("European AQI", extension.getString("airQualityStandard"));
-        assertEquals(35, extension.getJSONObject("airQuality").getInt("european_aqi"));
-        // Native pollution vocabulary is incompatible with these categories.
+        assertEquals(0.125, data.getJSONObject("condition").getDouble("precipitation"), 0.0001);
+        assertEquals(35, data.getJSONObject("aqi").getInt("aqivalue"));
         assertEquals("0", data.getJSONObject("aqi").get("lv"));
         assertEquals(0, data.getJSONObject("dailys").getJSONArray("dailyweathers").getJSONObject(1).getInt("lv"));
     }
@@ -374,16 +359,12 @@ public class WeatherMappingTest {
         }
     }
 
-    @Test public void mapsHourlyRainfallAndBothDayFlagSpellings() throws Exception {
+    @Test public void mapsBothNativeHourlyDayFlagSpellings() throws Exception {
         JSONObject forecast = forecast();
-        forecast.getJSONObject("hourly").put("precipitation", new JSONArray()
-                .put(1.25).put(JSONObject.NULL));
         JSONArray result = payload(forecast).getJSONObject("data")
                 .getJSONObject("hourlys").getJSONArray("hourlyweathers");
-        assertEquals(1.25, result.getJSONObject(0).getDouble("precipitation"), 0.001);
         assertEquals(Boolean.TRUE, result.getJSONObject(0).get("Isdaynight"));
         assertEquals(Boolean.FALSE, result.getJSONObject(7).get("Isdaynight"));
-        assertFalse(result.getJSONObject(1).has("precipitation"));
         assertTrue(WeatherMapping.isComplete(payload(forecast).toString()));
         forecast.getJSONObject("hourly").getJSONArray("is_day").put(0, 0.5);
         assertThrows(org.json.JSONException.class, () -> payload(forecast));

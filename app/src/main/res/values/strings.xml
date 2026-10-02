@@ -1,10 +1,4 @@
 <resources>
-    <string name="weather_widget_description">Weather with accurate hourly day and night icons</string>
-    <string name="weather_hours">NEXT HOURS</string>
-    <string name="weather_days">DAILY FORECAST</string>
-    <string name="weather_sunrise">Sunrise</string>
-    <string name="weather_sunset">Sunset</string>
-    <string name="weather_attribution">Weather data by Open-Meteo.com</string>
     <string name="current_location">Current location</string>
     <string name="refresh_accessibility_description">Refresh the stock BYD weather display using Open-Meteo when its refresh button is tapped.</string>
 </resources>

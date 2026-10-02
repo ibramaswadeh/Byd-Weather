@@ -1,3 +1,5 @@
+> Historical added-widget investigation, superseded by [stock-only-spec.md](stock-only-spec.md) and [stock-widget-data-audit.md](stock-widget-data-audit.md). The added renderer and its raw-data extension have been removed. The original field snapshot is preserved at GitHub commit ed08256a43f2706f71e2970174cf1ac9ae564b90; native-field-coverage.json now describes the stock-only source.
+
 # Complete weather mapping and BYD Weather widget
 
 User request: map all icons and every condition/data attribute, implement, trace, test, then spec/quality review, codebase review, and original-request review using Matt Pocock skills. User chose an additional BYD Weather widget because the original firmware ignores hourly night flags. Existing authorization preserves release version 1.1.1, version code 3, and the provided signing identity.

@@ -10,7 +10,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
-import java.util.Iterator;
 
 /** Converts Open-Meteo forecasts to BYD weather JSON. */
 public final class WeatherMapping {
@@ -208,8 +207,6 @@ public final class WeatherMapping {
                     .put("wp", windLevel(requireNumberAt(hourly, "wind_speed_10m", i)))
                     .put("isdaynight", isDay)
                     .put("Isdaynight", isDay);
-            Double precipitation = optionalNumberAt(hourly, "precipitation", i);
-            if (precipitation != null) item.put("precipitation", precipitation);
             hourlyItems.put(item);
         }
         hourlyData.put("hourlyweathers", hourlyItems);
@@ -218,7 +215,8 @@ public final class WeatherMapping {
         JSONObject dailyData = new JSONObject()
                 .put("publictime", currentDayTime)
                 .put("publictimeFmt", time.formatDate(currentDayTime))
-                .put("expiretime", nowMs + 24 * 60 * 60 * 1000L);
+                .put("expiretime", nowMs + 24 * 60 * 60 * 1000L)
+                .put("mobilelink", "https://open-meteo.com/");
         JSONArray dailyItems = new JSONArray();
         for (int i = 0; i < REQUIRED_DAILY_COUNT; i++) {
             long publicTime = time.parseRequiredTimeAt(days, i, "daily time");
@@ -287,7 +285,6 @@ public final class WeatherMapping {
                 .put("aqidays", new JSONArray())
                 .put("alarm", new JSONArray())
                 .put("liveInfos", new JSONArray())
-                .put("openMeteo", sourceData(forecast, airQuality, hourlyStart, hourlyEnd))
                 .put("weatherDesc", ATTRIBUTION)
                 .put("mobilelink", "https://open-meteo.com/");
         return new JSONObject()
@@ -357,53 +354,6 @@ public final class WeatherMapping {
         long selectorTime = moonset > 0 && time.formatDate(moonset).equals(time.formatDate(publicTime))
                 ? moonset : publicTime;
         item.put("moonSetFmt", time.formatOffsetTime(selectorTime));
-    }
-
-    /** Owned extension: original units/precision, rather than guessed proprietary native fields. */
-    private static JSONObject sourceData(JSONObject forecast, JSONObject air, int firstHour, int endHour)
-            throws JSONException {
-        JSONObject result = new JSONObject().put("schemaVersion", 1)
-                .put("units", new JSONObject()
-                        .put("current", sourceObject(forecast, "current_units"))
-                        .put("hourly", sourceObject(forecast, "hourly_units"))
-                        .put("daily", sourceObject(forecast, "daily_units"))
-                        .put("airQuality", sourceObject(air, "current_units")))
-                .put("current", sourceObject(forecast, "current"))
-                .put("hourly", sourceRows(forecast.getJSONObject("hourly"), firstHour, endHour))
-                .put("daily", sourceRows(forecast.getJSONObject("daily"), 0, REQUIRED_DAILY_COUNT))
-                .put("airQualityStandard", "European AQI")
-                .put("airQuality", sourceObject(air, "current"));
-        JSONArray aqiDays = new JSONArray();
-        ForecastTime time = new ForecastTime(forecast.getString("timezone"));
-        JSONArray dates = forecast.getJSONObject("daily").getJSONArray("time");
-        for (int i = 0; i < REQUIRED_DAILY_COUNT; i++) {
-            int value = dailyAirQualityValue(air, time.parseRequiredTimeAt(dates, i, "daily time"), time);
-            JSONObject day = new JSONObject().put("date", dates.getString(i));
-            if (value >= 0) day.put("european_aqi", value).put("description", aqiDescription(value));
-            aqiDays.put(day);
-        }
-        return result.put("airQualityDaily", aqiDays);
-    }
-
-    private static JSONObject sourceObject(JSONObject source, String key) {
-        JSONObject value = source == null ? null : source.optJSONObject(key);
-        return value == null ? new JSONObject() : value;
-    }
-
-    private static JSONArray sourceRows(JSONObject source, int first, int end) throws JSONException {
-        JSONArray result = new JSONArray();
-        for (int i = first; i < end; i++) {
-            JSONObject row = new JSONObject();
-            Iterator<String> keys = source.keys();
-            while (keys.hasNext()) {
-                String key = keys.next();
-                JSONArray values = source.optJSONArray(key);
-                Object value = values == null ? null : values.opt(i);
-                if (value != null && value != JSONObject.NULL) row.put(key, value);
-            }
-            result.put(row);
-        }
-        return result;
     }
 
     public static boolean isComplete(String json) {

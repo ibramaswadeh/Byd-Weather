@@ -1,3 +1,5 @@
+> Historical added-widget investigation, superseded by [stock-only-spec.md](stock-only-spec.md) and [stock-widget-data-audit.md](stock-widget-data-audit.md). The added renderer and its raw-data extension have been removed. The original field snapshot is preserved at GitHub commit ed08256a43f2706f71e2970174cf1ac9ae564b90; native-field-coverage.json now describes the stock-only source.
+
 # Complete Weather Mapping Implementation Plan
 
 Goal: accurate independent hourly icons, exhaustive documented conditions and native-field coverage, verified signed APK 1.1.1.

@@ -6,27 +6,27 @@
   "native_version_code": 60,
   "native_apk_sha256": "f585062b2b393e3a87019da3b40c2daa089e60ddacdfab189c22c67f2279281a",
   "audit_snapshot": {
-    "commit_at_audit": "9fd4bb02ea61fbcefa12e915afc27ce273899a6a",
+    "commit_at_audit": "9097ec54eb36764904d33b744c46e97e3b501d79",
     "source_working_tree_modified": true,
-    "mapper_sha256": "3bba1941c036ac7c383f534ff2a4828e92088bc774d330dc58763dcb5c19ffed",
-    "runtime_sha256": "13cfc3039e3670862fd20ed56f16f911e930969d9908a541953316dfa1d53c95",
+    "mapper_sha256": "d8c2844da1146624e5adf4f4d03a60372a066a7d96a9ab3691cbad121433866d",
+    "runtime_sha256": "9e56a2913a54a8a150d4a99bb5eae0235860727a6f0618d95d3993ccc93f2b38",
     "mapper": "app/src/main/java/com/ibramaswadeh/bydweather/WeatherMapping.java",
     "runtime": "app/src/main/java/com/ibramaswadeh/bydweather/WeatherRuntime.java",
     "validation_correspondence": "WeatherMapping.toBydJson validates every supplied hourly weather_code and is_day before representative daily sampling, including rows beyond the selected48 display hours",
-    "runtime_correspondence": "Validated payload cache/forecast success and last_fetch_ms govern owned-renderer freshness and normal cadence; native provider sync/readback and last_success_ms are tracked separately. Native sync unavailability does not turn a validated forecast/cache refresh into a weather-fetch failure."
+    "runtime_correspondence": "Stock provider write/readback alone establishes success and advances last_success_ms/location; failure preserves native data and retries. Owned widget/cache/last_fetch state removed."
   },
   "declaration_count": 371,
   "native_class_count": 29,
   "unique_json_path_count": 211,
   "disposition_counts": {
-    "mapped": 81,
-    "compatibility": 48,
-    "unavailable": 75,
+    "compatibility": 50,
     "derived": 80,
-    "unverified": 73,
-    "unused": 14
+    "mapped": 81,
+    "unavailable": 75,
+    "unused": 12,
+    "unverified": 73
   },
-  "scope": "Exact two native DTO families. Dispositions describe the recorded mapper snapshot; source existence does not verify native semantics or UI capability.",
+  "scope": "Stock-only snapshot: exact two native DTO families; declared/bindable fields are distinct from rendered fields. Current stock-widget-data-audit.md supplies consumer/usage findings; removed owned extensions are excluded.",
   "sources": {
     "native_dto": {
       "artifact": "WeatherData.apk/classes2.dex",
@@ -89,14 +89,14 @@
       "endpoint": "https://api.bigdatacloud.net/data/reverse-geocode-client"
     },
     "adapter": {
-      "commit_at_audit": "9fd4bb02ea61fbcefa12e915afc27ce273899a6a",
+      "commit_at_audit": "9097ec54eb36764904d33b744c46e97e3b501d79",
       "source_working_tree_modified": true,
-      "mapper_sha256": "3bba1941c036ac7c383f534ff2a4828e92088bc774d330dc58763dcb5c19ffed",
-      "runtime_sha256": "13cfc3039e3670862fd20ed56f16f911e930969d9908a541953316dfa1d53c95",
+      "mapper_sha256": "d8c2844da1146624e5adf4f4d03a60372a066a7d96a9ab3691cbad121433866d",
+      "runtime_sha256": "9e56a2913a54a8a150d4a99bb5eae0235860727a6f0618d95d3993ccc93f2b38",
       "mapper": "app/src/main/java/com/ibramaswadeh/bydweather/WeatherMapping.java",
       "runtime": "app/src/main/java/com/ibramaswadeh/bydweather/WeatherRuntime.java",
       "validation_correspondence": "WeatherMapping.toBydJson validates every supplied hourly weather_code and is_day before representative daily sampling, including rows beyond the selected48 display hours",
-      "runtime_correspondence": "Validated payload cache/forecast success and last_fetch_ms govern owned-renderer freshness and normal cadence; native provider sync/readback and last_success_ms are tracked separately. Native sync unavailability does not turn a validated forecast/cache refresh into a weather-fetch failure."
+      "runtime_correspondence": "Stock provider write/readback alone establishes success and advances last_success_ms/location; failure preserves native data and retries. Owned widget/cache/last_fetch state removed."
     },
     "native_launcher": {
       "artifact": "Launcher3.apk/classes.dex",
@@ -115,128 +115,6 @@
         "AutoInstallsLayout.AppWidgetParser.parseAndAdd": "1601cc"
       }
     }
-  },
-  "owned_extension": {
-    "path": "$.data.openMeteo",
-    "native_dto_declared": false,
-    "schema_version": 1,
-    "purpose": "Preserve provider values/precision with original provider unit objects instead of inventing proprietary native units or half-day aggregation",
-    "groups": {
-      "current": {
-        "variables": [
-          "temperature_2m",
-          "relative_humidity_2m",
-          "apparent_temperature",
-          "is_day",
-          "precipitation",
-          "weather_code",
-          "cloud_cover",
-          "pressure_msl",
-          "wind_speed_10m",
-          "wind_direction_10m",
-          "wind_gusts_10m",
-          "visibility",
-          "uv_index"
-        ],
-        "selection": "Exact current object including source time/interval",
-        "units_path": "$.data.openMeteo.units.current"
-      },
-      "hourly": {
-        "variables": [
-          "temperature_2m",
-          "weather_code",
-          "precipitation_probability",
-          "wind_speed_10m",
-          "wind_direction_10m",
-          "is_day",
-          "precipitation",
-          "rain",
-          "showers",
-          "snowfall",
-          "relative_humidity_2m",
-          "cloud_cover",
-          "wind_gusts_10m",
-          "apparent_temperature",
-          "pressure_msl",
-          "visibility",
-          "uv_index",
-          "dew_point_2m"
-        ],
-        "selection": "Same48 selected chronological future hours as native hourly group; array rows retain exact source values",
-        "units_path": "$.data.openMeteo.units.hourly"
-      },
-      "daily": {
-        "variables": [
-          "weather_code",
-          "temperature_2m_max",
-          "temperature_2m_min",
-          "sunrise",
-          "sunset",
-          "uv_index_max",
-          "wind_speed_10m_max",
-          "wind_direction_10m_dominant",
-          "apparent_temperature_max",
-          "apparent_temperature_min",
-          "pressure_msl_mean",
-          "visibility_min",
-          "moonrise",
-          "moonset",
-          "precipitation_sum",
-          "rain_sum",
-          "showers_sum",
-          "snowfall_sum",
-          "precipitation_probability_max",
-          "precipitation_hours",
-          "sunshine_duration",
-          "wind_gusts_10m_max"
-        ],
-        "selection": "Sixteen requested local dates, yesterday through14 future dates; original source daily rows",
-        "units_path": "$.data.openMeteo.units.daily"
-      },
-      "airQuality": {
-        "variables": [
-          "european_aqi",
-          "pm10",
-          "pm2_5"
-        ],
-        "selection": "Exact optional current AQ object, empty when unavailable",
-        "units_path": "$.data.openMeteo.units.airQuality"
-      }
-    },
-    "time_zone_path": "$.data.city.timezone",
-    "air_quality_standard": "European AQI",
-    "air_quality_daily": "Maximum available hourly European AQI per forecast local date; absent dates have no invented value; this extension does not apply native AQ-day vocabulary",
-    "other_owned_fields": {
-      "$.data.condition": [
-        "isdaynight",
-        "sourceWeatherCode"
-      ],
-      "$.data.hourlys.hourlyweathers[]": [
-        "weathertext",
-        "sourceWeatherCode",
-        "precipitation",
-        "Isdaynight"
-      ],
-      "$.data.dailys.dailyweathers[].conditionDay": [
-        "sourceWeatherCode"
-      ],
-      "$.data.dailys.dailyweathers[].conditionNight": [
-        "sourceWeatherCode"
-      ]
-    },
-    "caveats": [
-      "Source amounts keep source intervals; snowfall cm is depth and precipitation mm includes liquid equivalent",
-      "Source preservation does not imply every extra variable is displayed",
-      "No official-warning/radar/lifestyle feed is created by this extension",
-      "Unknown keys are ignored by native Gson DTOs"
-    ],
-    "sources": [
-      "adapter",
-      "forecast_docs_cache",
-      "forecast_source",
-      "aq_source",
-      "native_gson"
-    ]
   },
   "fields": [
     {
@@ -1513,7 +1391,7 @@
         "adapter",
         "aq_source"
       ],
-      "caveat": "Native scale unresolved; owned extension explicitly labels European AQI",
+      "caveat": "Native pollution category scale unresolved; neutral level0 suppresses mismatched labels. European values/descriptions retained as metadata only; stock UI does not label their source scale.",
       "native_consumers": [
         "No non-accessor read site found in inspected com.byd widget/dialog/service sources; Gson can still bind field"
       ]
@@ -1541,7 +1419,7 @@
         "adapter",
         "aq_source"
       ],
-      "caveat": "Native scale unresolved; owned extension explicitly labels European AQI",
+      "caveat": "Native pollution category scale unresolved; neutral level0 suppresses mismatched labels. European values/descriptions retained as metadata only; stock UI does not label their source scale.",
       "native_consumers": [
         "No non-accessor read site found in inspected com.byd widget/dialog/service sources; Gson can still bind field"
       ]
@@ -1569,7 +1447,7 @@
         "adapter",
         "aq_source"
       ],
-      "caveat": "Native scale unresolved; owned extension explicitly labels European AQI",
+      "caveat": "Native pollution category scale unresolved; neutral level0 suppresses mismatched labels. European values/descriptions retained as metadata only; stock UI does not label their source scale.",
       "native_consumers": [
         "RequestService.getWeatherInfo: current AQ text read/logged"
       ]
@@ -9419,14 +9297,14 @@
       "path": "$.data.dailys.mobilelink",
       "native_descriptor": "Ljava/lang/String;",
       "native_java_type": "java.lang.String",
-      "disposition": "unused",
-      "emission": "omitted",
-      "mapping": "Optional daily-group source link; item-level source links supplied",
+      "disposition": "compatibility",
+      "emission": "string",
+      "mapping": "Open-Meteo source URL https://open-meteo.com/; verified native daily-container metadata, no display consumer",
       "upstream": [],
       "units": {
         "upstream": null,
-        "emitted": null,
-        "native_evidence": "Unverified; no unit established by an inspected native consumer"
+        "emitted": "source URL",
+        "native_evidence": "Native java.lang.String metadata; no measurement unit"
       },
       "sources": [
         "native_dto",
@@ -9444,14 +9322,14 @@
       "path": "$.data.dailys.mobilelink",
       "native_descriptor": "Ljava/lang/String;",
       "native_java_type": "java.lang.String",
-      "disposition": "unused",
-      "emission": "omitted",
-      "mapping": "Optional daily-group source link; item-level source links supplied",
+      "disposition": "compatibility",
+      "emission": "string",
+      "mapping": "Open-Meteo source URL https://open-meteo.com/; verified native daily-container metadata, no display consumer",
       "upstream": [],
       "units": {
         "upstream": null,
-        "emitted": null,
-        "native_evidence": "Unverified; no unit established by an inspected native consumer"
+        "emitted": "source URL",
+        "native_evidence": "Native java.lang.String metadata; no measurement unit"
       },
       "sources": [
         "native_dto",

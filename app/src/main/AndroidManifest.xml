@@ -53,11 +53,5 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
-        <receiver android:name=".WeatherWidgetProvider" android:exported="true" android:label="BYD Weather">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data android:name="android.appwidget.provider" android:resource="@xml/weather_widget_info" />
-        </receiver>
     </application>
 </manifest>

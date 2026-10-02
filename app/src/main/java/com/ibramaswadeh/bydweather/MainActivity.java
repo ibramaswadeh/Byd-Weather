@@ -2,7 +2,6 @@ package com.ibramaswadeh.bydweather;
 
 import android.Manifest;
 import android.app.Activity;
-import android.appwidget.AppWidgetManager;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
@@ -57,9 +56,6 @@ public final class MainActivity extends Activity {
     private TextView statusText;
     private TextView permissionText;
     private Button refreshButton;
-    private LinearLayout forecastContainer;
-    private String displayedForecast;
-    private long displayedForecastMinute;
     private boolean manualRefreshing;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -101,13 +97,9 @@ public final class MainActivity extends Activity {
         title.setGravity(Gravity.CENTER);
         title.setTypeface(null, Typeface.BOLD);
         root.addView(title);
-        TextView subtitle = label("Local weather and hourly forecasts", 16, MUTED);
+        TextView subtitle = label("Local weather for the stock BYD widget", 16, MUTED);
         subtitle.setGravity(Gravity.CENTER);
         root.addView(subtitle);
-
-        forecastContainer = new LinearLayout(this);
-        forecastContainer.setOrientation(LinearLayout.VERTICAL);
-        root.addView(forecastContainer, new LinearLayout.LayoutParams(-1, -2));
 
         addSpace(root, 22);
         weatherSwitch = new Switch(this);
@@ -167,18 +159,6 @@ public final class MainActivity extends Activity {
         statusText = label("", 16, TEXT);
         statusText.setPadding(0, dp(12), 0, dp(12));
         root.addView(statusText);
-        Button addWidget = button("Add BYD Weather widget");
-        addWidget.setOnClickListener(v -> {
-            AppWidgetManager manager = AppWidgetManager.getInstance(this);
-            if (manager.isRequestPinAppWidgetSupported()) {
-                manager.requestPinAppWidget(new ComponentName(this, WeatherWidgetProvider.class), null, null);
-            } else {
-                Toast.makeText(this, "This launcher cannot pin widgets. Use a compatible launcher's widget picker, or view the forecast here.", Toast.LENGTH_LONG).show();
-            }
-        });
-        root.addView(addWidget);
-        TextView widgetHint = label("Forecast icons use each hour's day and night value. The original DiLink launcher restricts added home-screen widgets; compatible launchers can add BYD Weather.", 14, MUTED);
-        root.addView(widgetHint);
 
         addSpace(root, 10);
         Button bydSettings = button("Open BYD background-start settings");
@@ -203,16 +183,15 @@ public final class MainActivity extends Activity {
         credit.setFocusable(true);
         credit.setMinHeight(dp(48));
         credit.setGravity(Gravity.CENTER_VERTICAL);
-        credit.setOnClickListener(v -> openDataSource());
+        credit.setOnClickListener(v -> {
+            if (!tryOpen(new Intent(Intent.ACTION_VIEW, Uri.parse("https://open-meteo.com/")))) {
+                Toast.makeText(this, "No browser available. Visit https://open-meteo.com/",
+                        Toast.LENGTH_LONG).show();
+            }
+        });
         root.addView(credit);
         setContentView(scroll);
         updateStatus();
-    }
-
-    private void openDataSource() {
-        if (!tryOpen(new Intent(Intent.ACTION_VIEW, Uri.parse("https://open-meteo.com/")))) {
-            Toast.makeText(this, "No browser available. Visit https://open-meteo.com/", Toast.LENGTH_LONG).show();
-        }
     }
 
     private void setWeatherEnabled(boolean enabled) {
@@ -371,35 +350,14 @@ public final class MainActivity extends Activity {
 
     private void updateStatus() {
         if (statusText == null) return;
-        String forecast = preferences.getString(WeatherWidgetProvider.PREF_PAYLOAD, null);
-        long minute = System.currentTimeMillis() / (60 * 1000L);
-        if (forecastContainer != null && (!java.util.Objects.equals(forecast, displayedForecast)
-                || minute != displayedForecastMinute)) {
-            displayedForecast = forecast;
-            displayedForecastMinute = minute;
-            forecastContainer.removeAllViews();
-            boolean valid = WeatherMapping.isComplete(forecast);
-            forecastContainer.setVisibility(valid ? View.VISIBLE : View.GONE);
-            if (valid) {
-                View preview = WeatherWidgetProvider.preview(this, forecastContainer);
-                TextView attribution = preview.findViewById(R.id.widget_attribution);
-                attribution.setMinHeight(dp(48));
-                attribution.setOnClickListener(v -> openDataSource());
-                forecastContainer.addView(preview, new LinearLayout.LayoutParams(-1, -2));
-            }
-        }
         boolean enabled = preferences.getBoolean(WeatherRuntime.PREF_ENABLED, false);
         refreshButton.setEnabled(enabled && !manualRefreshing);
         long last = preferences.getLong(WeatherRuntime.PREF_LAST_SUCCESS_MS, 0L);
-        long fetched = preferences.getLong(WeatherRuntime.PREF_LAST_FETCH_MS, last);
-        String stamp = fetched == 0L ? "Forecast not updated yet" :
-                "Forecast updated: " + DateFormat.getDateTimeInstance().format(new Date(fetched));
-        stamp += last == 0L ? "\nStock widget not synced yet" :
-                "\nStock widget synced: " + DateFormat.getDateTimeInstance().format(new Date(last));
+        String stamp = last == 0L ? "Never updated" :
+                "Last update: " + DateFormat.getDateTimeInstance().format(new Date(last));
         String state = enabled ? preferences.getString(WeatherService.KEY_STATUS,
                 "Waiting for first update") : "Weather updates are off";
-        String writtenLocation = preferences.getString(WeatherRuntime.PREF_LAST_FETCH_LOCATION_NAME,
-                preferences.getString(WeatherRuntime.PREF_LAST_LOCATION_NAME, ""));
+        String writtenLocation = preferences.getString(WeatherRuntime.PREF_LAST_LOCATION_NAME, "");
         statusText.setText(state + "\n" + stamp
                 + (writtenLocation.isEmpty() ? "" : "\nLocation: " + writtenLocation));
         if (permissionText != null) {

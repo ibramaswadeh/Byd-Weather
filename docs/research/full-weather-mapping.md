@@ -1,3 +1,5 @@
+> Historical added-widget investigation, superseded by [stock-only-spec.md](stock-only-spec.md) and [stock-widget-data-audit.md](stock-widget-data-audit.md). The added renderer and its raw-data extension have been removed. The original field snapshot is preserved at GitHub commit ed08256a43f2706f71e2970174cf1ac9ae564b90; native-field-coverage.json now describes the stock-only source.
+
 # Complete native weather field coverage
 
 Research date: 2026-10-02. This audit records **every one of the 371 declared fields in 29 native DTO classes**, including the duplicated service/library declarations. The [machine-readable coverage](native-field-coverage.json) contains each field's native model/class/path/type, disposition, emission, exact input/conversion, units, native consumer and primary-source references. The table below merges identical JSON paths only for reading; the JSON retains all 371 declaration identities. The target is the supplied DiLink 3.0 WeatherData APK **2.9.5.250616/code60**, SHA-256 `f585062b2b393e3a87019da3b40c2daa089e60ddacdfab189c22c67f2279281a`, as documented in [the firmware contract](firmware-weather-contract.md). [1]
