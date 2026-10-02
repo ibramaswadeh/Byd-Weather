@@ -8,5 +8,3 @@
   created for BYD Weather, included under this repository's AGPL-3.0-only license.
 - Weather data: [Open-Meteo](https://open-meteo.com/). Its attribution is
   displayed in the app and stored in the BYD weather payload.
-- District/suburb and city names: [BigDataCloud](https://www.bigdatacloud.com/),
-  using its keyless client reverse-geocoding API for the device's fresh GPS fix.

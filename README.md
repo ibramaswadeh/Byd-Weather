@@ -1,110 +1,145 @@
 # BYD Weather
 
-Updates the firmware's stock BYD weather display with local forecasts from
+Keeps the stock BYD weather widget updated with local forecasts from
 [Open-Meteo](https://open-meteo.com/). Runs as a background service on compatible
-DiLink head units. The app contains settings, permissions and refresh controls.
-It does not provide an additional widget or forecast renderer.
+Chinese DiLink head units, with a small settings screen for permissions and
+refresh controls.
 
 ## Features
 
-- All 29 documented WMO conditions mapped to the firmware's native condition IDs.
-- Current weather, hourly/daily forecasts and available compatible native metadata.
-- Location names from BigDataCloud as `district, city`, with duplicate names and
-  trailing `Sub-District` labels removed.
-- Updates every 15 minutes by default, adjustable from 5 to 180 minutes.
+- Current weather, hourly and daily forecasts, and air quality when available.
+- Automatic updates every 15 minutes by default; adjustable from 5 to 180 minutes.
 - Optional startup with the car and a persistent status notification.
-- Manual updates from the app or the optional stock-refresh Accessibility handler.
+- Manual updates from the app or, optionally, the stock widget's refresh button.
+- Adaptive launcher icons and monochrome icons for Android 13+.
 
-## Requirements and setup
+## Requirements
 
-Android 8.0/API 26 or later; designed around DiLink on Android 10. The head unit
-must expose the stock BYD WeatherData provider, fresh GPS NMEA messages and a
-validated internet connection. Precise/background location and DiLink background
-startup permissions are required where applicable. No root, ADB or API key is needed.
+The APK requires Android 8.0 (API 26) or later. The integration is designed around
+DiLink on Android 10; installation alone does not establish compatibility with
+a particular car or firmware.
 
-1. Install the APK and open BYD Weather. Disable another app's stock-weather updater
-   if one is already active.
-2. Enable **Keep weather updated** and grant precise location. Use **Grant background
-   location** for updates after startup where Android requires it.
-3. Enable **Start automatically with the car** and allow background operation in
-   **Open BYD background-start settings**.
-4. Enable GPS and usable internet, then tap **Update weather now**. Confirm the stock
-   widget updates and check the saved successful-update timestamp/location.
-5. Choose your refresh interval.
-6. Optional: use **Enable stock weather refresh button** and enable the BYD Weather
-   refresh Accessibility handler. It observes stock WeatherData taps only.
+The head unit must provide:
 
-## Data coverage and firmware limits
+- Access to the stock BYD WeatherData provider and widget.
+- GPS that exposes fresh NMEA messages to the app.
+- Precise location permission, plus background location permission for startup
+  where Android requires it.
+- An internet connection that Android recognizes as usable.
+- Permission to start and run in the background through DiLink's app manager.
 
-The [stock-widget audit](docs/research/stock-widget-data-audit.md) traces each
-rendered attribute and each usable declared field back to the actual firmware,
-its units and Open-Meteo. The [native inventory](docs/research/native-field-coverage.json)
-records all 371 declarations, 29 classes and 211 distinct JSON paths, distinguishing
-mapped/derived/compatibility values from unavailable, unused and unverified fields.
+The app does not require root, ADB, or a weather API key.
 
-Every safely sourced stock-display weather attribute is mapped. Current pressure,
-precipitation, cloud cover, feels-like/gust values, period humidity/cloud/probability/
-gust-force values, daily feels-like/lunar values and source metadata also retain
-verified declared mappings, even where this firmware's renderer does not show them.
-Only variables used by those mappings are requested: 13 current, 9 hourly and
-12 daily forecast variables, plus optional current/hourly air-quality data.
+## Setup
 
-The removed renderer's raw `data.openMeteo` extension is not sent. Unsupported
-hourly precipitation fields and source-only requests for rain/snow totals, dew
-point, sunshine duration and other unused metrics have been removed. Native
-period rain/snow/totalLiquid and daily pressure/visibility have unverified units
-or intervals; similarly named source values are not sufficient proof of a correct
-conversion. Official alerts, radar, lifestyle advice and administrative IDs are
-not fabricated.
+1. Install the APK and open **BYD Weather**. If another app updates the same
+   widget, disable its weather updates first.
+2. Enable **Keep weather updated** and grant precise location permission.
+   Use **Grant background location** to allow location access all the time
+   when Android offers that option.
+3. Enable **Start automatically with the car** if you want automatic startup.
+   Open **Open BYD background-start settings** and allow startup and background
+   operation in DiLink's app manager.
+4. Turn on GPS, connect to the internet, then tap **Update weather now**.
+   Check the app's status and last successful update time, and confirm the
+   stock widget changes.
+5. Set your preferred refresh interval.
+6. Optional: tap **Enable stock weather refresh button** and enable
+   **BYD Weather refresh button** in Android Accessibility settings.
 
-The stock hourly renderer applies one global night state to all icons and ignores
-individual hourly day/night flags. Verified sunrise anchors correct its pre-dawn
-state, but a row crossing sunrise/sunset still cannot select sun/moon separately
-without changing the native renderer. Native UV/wind labels also have fixed ranges.
-European AQI differs from the native pollution-category scale; values/descriptions
-are retained as data, but neutral category 0 avoids misleading native labels.
+Accessibility is only needed for updates triggered by the stock widget's button.
+The stock weather app can still perform its own refresh action.
 
-## Refresh behavior
+## How updates work
 
-The service waits for validated internet and collects a fresh NMEA position for
-up to 60 seconds. Cached Android/network positions are not used. GPS listeners
-are released after acquisition ends or is cancelled. The fresh position goes to
-BigDataCloud's device-client endpoint for a localized district/city name. Missing
-or failed geocoding falls back to **Current location**; optional AQ failure does
-not block weather.
+The service waits for usable internet, then collects a fresh GPS fix from NMEA
+messages for up to 60 seconds. Cached locations and network-based coordinates
+are not used. GPS listeners are released after acquisition finishes or stops.
 
-Payloads are validated before native writes. Unknown/fractional weather codes or
-invalid day flags reject the update, including beyond the displayed hourly slice.
-Only successful provider write/readback advances the saved timestamp/location
-and normal refresh cadence. Provider failure attempts to restore the previous
-native row; failures retry after five minutes while prerequisites are available,
-otherwise the service waits for their recovery. Removing the additional widget
-also removes its cache and separate fetch-success state.
+After fetching weather, the app writes it to the BYD provider, reads it back,
+and requests a widget refresh. A successful update advances the saved timestamp.
 
-Provider access, GPS delivery and background startup depend on the firmware.
-Automated/native-method checks do not establish physical-car behavior.
+GPS and weather-fetch failures keep the previous weather data. Failed updates
+leave the saved success timestamp unchanged. Failed provider writes attempt
+to restore the previous data.
 
-## Build and validation
+Failures retry after five minutes when prerequisites remain available. Otherwise,
+the app waits for GPS or network recovery; revoked location permission must be
+restored before updates can resume. An air-quality fetch failure does not block
+the weather update.
 
-Use JDK 17, Android SDK Platform 35 and Build Tools 35.0.0. Set `ANDROID_HOME` or
-`sdk.dir` in local.properties. The wrapper downloads Gradle 8.9 on first use.
+## Troubleshooting and limits
+
+| Symptom | Check |
+| --- | --- |
+| Waiting for GPS or internet | Enable GPS, grant precise location, and check that Android recognizes the internet connection. |
+| Raw GPS unavailable | The head unit must expose fresh NMEA messages. The app retries after five minutes. |
+| Update failed | Check the reported error, network access, and access to the BYD weather provider. |
+| Updates stop after reboot | Check both startup switches, background location permission, and DiLink's background settings. |
+| A settings screen is unavailable | Open the relevant system settings from the car launcher. |
+| Last successful time stays unchanged | A GPS fix or weather request alone is not enough; the provider update must succeed. |
+
+Provider access, GPS delivery, and automatic startup depend on DiLink firmware.
+Automated tests cover parsing, navigation, and icon rendering; they do not
+establish those behaviors on a physical head unit.
+
+## Build
+
+Use JDK 17, Android SDK Platform 35, and Build Tools 35.0.0. Configure the SDK
+location through `ANDROID_HOME` or `sdk.dir` in a local `local.properties` file.
+The Gradle wrapper downloads Gradle 8.9 on first use.
+
+```sh
+git clone https://github.com/ibramaswadeh/Byd-Weather.git
+cd Byd-Weather
+./gradlew assembleDebug
+```
+
+The debug APK uses the Android debug key. For a release build:
+
+```sh
+./gradlew assembleRelease
+```
+
+To sign that release, set all three environment variables before building:
+
+| Variable | Value |
+| --- | --- |
+| `BYD_WEATHER_KEYSTORE` | Absolute path to your keystore |
+| `BYD_WEATHER_STORE_PASSWORD` | Keystore password |
+| `BYD_WEATHER_KEY_PASSWORD` | Password for the `byd-weather` key alias |
+
+| Build | APK output |
+| --- | --- |
+| Debug | `app/build/outputs/apk/debug/app-debug.apk` |
+| Release with signing configured | `app/build/outputs/apk/release/app-release.apk` |
+| Release without signing configured | `app/build/outputs/apk/release/app-release-unsigned.apk` |
+
+An unsigned APK must be signed before installation. Keep the same signing key
+for updates. Switching from a debug key to a different release key requires
+uninstalling the existing app, which removes its local settings.
+
+## Validation
+
+Run unit tests, release lint, and the release build:
 
 ```sh
 ./gradlew testDebugUnitTest lintRelease assembleRelease
 ```
 
-Release output is `app/build/outputs/apk/release/app-release-unsigned.apk` unless
-all signing variables are set: `BYD_WEATHER_KEYSTORE`, `BYD_WEATHER_STORE_PASSWORD`,
-`BYD_WEATHER_KEY_PASSWORD`. The key alias is `byd-weather`; signed Gradle output is
-`app/build/outputs/apk/release/app-release.apk`. Keep the existing signing key for
-updates. The authorized delivery remains version 1.1.1/code 3.
+With a device or emulator connected, run the icon rendering tests:
 
-[CI](.github/workflows/android.yml) tests, lints and builds a release APK with
-checksum/check-report artifacts. Device icon instrumentation is available through
-`./gradlew connectedDebugAndroidTest` when a device/emulator is connected.
+```sh
+./gradlew connectedDebugAndroidTest
+```
+
+The [GitHub Actions workflow](.github/workflows/android.yml) also runs these
+checks and captures icons on Android 10 emulators at head-unit and phone sizes.
 
 ## License and credits
 
-Licensed under [AGPL-3.0-only](LICENSE). Data by [Open-Meteo](https://open-meteo.com/),
-location names by [BigDataCloud](https://www.bigdatacloud.com/). See
-[third-party notices](THIRD_PARTY_NOTICES.md) for source attribution.
+Licensed under [AGPL-3.0-only](LICENSE). The weather adapter originates from
+[BYD Extend](https://github.com/sunlixWhyNotAvailable/byd-turnsignal-cameraview).
+
+Weather data comes from Open-Meteo; attribution appears in the app and weather
+payload. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for credits.
