@@ -1,0 +1,519 @@
+{
+  "firmware": {
+    "filename": "Di3.0_1for2_18.1.2.2601230.1_0.zip",
+    "sha256": "50434a6f5dd501f8d10bf9e5e47ef3e4f0b1354363ecac1ddd877b140589263a",
+    "apk": "WeatherData.apk",
+    "package": "com.byd.weatherdata",
+    "version": "2.9.5.250616",
+    "apkSha256": "f585062b2b393e3a87019da3b40c2daa089e60ddacdfab189c22c67f2279281a"
+  },
+  "analysis": {
+    "server": "rea-agents 6.4.0 MCP",
+    "codeProvider": "JADX headless MCP 0.7.1",
+    "resourceProvider": "Apktool 2.12.1 via REA MCP",
+    "kind": "Static decompilation and decoded resources; no head-unit runtime capture",
+    "evidence": {
+      "widget": {
+        "id": "ev_78fc7ae377285703e614baaa9b4bd5ba2499792fc52fd825415304c7cba22920",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.WeatherWidgetProvider",
+        "method": "updateWidget"
+      },
+      "nightSelector": {
+        "id": "ev_8adc281e72fa964b1043f8956dc3fc7639edb83b806c0c8894074a20872e4239",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.NumberUtils",
+        "method": "isDuringNight"
+      },
+      "labelSelector": {
+        "id": "ev_8316676c536a22aee776fa124e9b9ad66415df493e3a2466c6c97843fdfdee0f",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherUtils",
+        "method": "transformCNWeatherId"
+      },
+      "iconMap": {
+        "id": "ev_d0e4710b58eeda4baeef504282e3eeb3e6d251f55541c041587c5361f872c430",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherUtils",
+        "method": "weatherConditionMap"
+      },
+      "landscapeCard": {
+        "id": "ev_bfd37cf2d79caa5bdd79fa21db8b8379356c553089912283970e16a1c8aa7bdc",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherUtils",
+        "method": "weatherConditionBgCardLand"
+      },
+      "portraitCard": {
+        "id": "ev_b5c4f2e09233cd70d746a1b717734cebe3bd205a383b846e67c0d5b0914c6e11",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherUtils",
+        "method": "weatherConditionBgCardPort"
+      },
+      "englishStrings": {
+        "id": "ev_23c59a891b24f3b18535ab26cee419a9cc698570fb8592235714410b072db7b4",
+        "operation": "decode_android_resources"
+      },
+      "nativeQuery": {
+        "id": "ev_20ab2436b40e504c99843eccc0b29006c0a44b26a0e4ece4d7b3de75525e2297",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherlibrary.WeatherQueryUtil",
+        "method": "queryWeatherBean"
+      },
+      "providerQuery": {
+        "id": "ev_61477c289c1d574197b0be83c6fc47ca73789aed2963aa58c171648ba0955e51",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherContentProvider",
+        "method": "query"
+      },
+      "refreshRegistration": {
+        "id": "ev_80727f007eb4047531600b139207c0eb61f8cbb7e11d185753e9df0baf64ef84",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.service.RequestService",
+        "method": "registerResolver"
+      },
+      "refreshObserver": {
+        "id": "ev_1cb3fb92a5789b903044cc6aee8dd1c2c29d7141c60084edd1745dfe785ba2a8",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.service.RequestService.TimeFormatChangeObserver",
+        "method": "onChange"
+      },
+      "refreshBroadcast": {
+        "id": "ev_7620cb05e827ca0106169ccc6772fb7244fc2b16faf9c3e73f1717cce7775eb7",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.service.RequestService",
+        "method": "sendWidgetBroadcast"
+      },
+      "hourlyConstructor": {
+        "id": "ev_7db56ea4449d7b68fc601535313915423d069bc1109b89b761b5bc41d6b0cf88",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.adapter.HoursAdapter",
+        "method": "<init>"
+      },
+      "hourlyBinding": {
+        "id": "ev_ca571becf1fb29b63d2e3ccdbd0fc3fa61cdd9129a4483dc648c486152ef9328",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.adapter.HoursAdapter",
+        "method": "onBindViewHolder"
+      },
+      "hourlyIconSelector": {
+        "id": "ev_c4fbe4da1a115b03a9bcc9bf670ed349d0a441a405bfbe41a9022a2a42f6bc4a",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.adapter.HoursAdapter",
+        "method": "getValidResourceId"
+      },
+      "hourlySolarEventBinding": {
+        "id": "ev_b2cee8341d51e8a6032bc7c08418bd597191b55aa833216f62295f21d0a98c22",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.adapter.HoursAdapter",
+        "method": "setSunriseOrSunset"
+      },
+      "dailyConstructor": {
+        "id": "ev_34b4bd1dc0bdd300f920569d5f043fc8b0f53956100c13f3af9037aac1d06abc",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.adapter.DaysAdapter",
+        "method": "<init>"
+      },
+      "dailyBinding": {
+        "id": "ev_dd12b7ee282a136a12358f917208572ed54b352eddf8591762926d18de0363c7",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.adapter.DaysAdapter",
+        "method": "onBindViewHolder"
+      },
+      "recheckedEnglish": {
+        "id": "ev_23c59a891b24f3b18535ab26cee419a9cc698570fb8592235714410b072db7b4",
+        "operation": "decode_android_resources"
+      },
+      "recheckedChinese": {
+        "id": "ev_ada9cba154f06b93e5541b51862282971cddaaa95a09fe64647d9428dccff561",
+        "operation": "decode_android_resources"
+      },
+      "recheckedLandscapeCard": {
+        "id": "ev_cdc9baa4a98799c0e6823ead4d6e23c97b197006a8910fec92b011d3dc7abed7",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherUtils",
+        "method": "weatherConditionBgCardLand"
+      },
+      "recheckedPortraitCard": {
+        "id": "ev_0e223632daf45442c81a94106546893fe6f7ce21b7e74fa71e25ac7f67283de3",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherUtils",
+        "method": "weatherConditionBgCardPort"
+      },
+      "recheckedIcon": {
+        "id": "ev_675afcd1dcb7b0c80082fb8e066bc3cec919d1a2ae823929e49f2d78d3fa909d",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherUtils",
+        "method": "weatherConditionMap"
+      },
+      "recheckedLabelSelector": {
+        "id": "ev_9119de48f38ea78ca1e5afec645377ac86c38d2327c4556a4ca3e1577e9b947f",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherUtils",
+        "method": "transformCNWeatherId"
+      },
+      "recheckedLandscapeAppBackground": {
+        "id": "ev_7dcc346e72ff0a8bdc7b56090d09327feb82c7dc91c9ea98db9db527a374d216",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherUtils",
+        "method": "weatherConditionBgMapLand"
+      },
+      "recheckedPortraitAppBackground": {
+        "id": "ev_6e11882b9c30b864fdfa67ef6d5f9de22c83be96119f0c4163bf3416a904876b",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherUtils",
+        "method": "weatherConditionBgMapPort"
+      },
+      "recheckedResourceInventory": {
+        "id": "ev_20d82437802391b9aa9dfa05555be7f40e65ac6db600a658b96274a0b10a65ac",
+        "operation": "inspect_android_class",
+        "class": "com.byd.weatherdata.R.mipmap"
+      }
+    },
+    "recheck": {
+      "nativeConditionsChecked": 33,
+      "supportedSourceConditionsChecked": 29,
+      "unsupportedSourceCodesRejected": 71,
+      "nativeConditionsUsedByMapper": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        13,
+        14,
+        15,
+        16,
+        18,
+        19
+      ],
+      "selectorFamilyMismatches": 0,
+      "differencesFromPreviousNativeFixture": 0,
+      "referencedResourcesChecked": 43,
+      "missingReferencedResources": []
+    }
+  },
+  "widget": {
+    "conditionKey": "cnweatherid",
+    "usesPayloadWeatherText": false,
+    "providerSortOrder": null,
+    "providerRow": "moveToFirst",
+    "nightTimeKey": "data.condition.updatetime",
+    "nightOnlyNativeCode": 0,
+    "nightLandscapeCard": "card_night",
+    "nightPortraitCard": "card_night_p",
+    "refreshObservedUri": "content://settings/system/time_12_24"
+  },
+  "conditions": {
+    "0": {
+      "englishLabel": "Sunny",
+      "icon": "icon_weather_sunny",
+      "landscapeCard": "card_sunny",
+      "portraitCard": "card_sunny_p",
+      "chineseLabel": "晴",
+      "landscapeAppBackground": "bg_sunny",
+      "portraitAppBackground": "bg_sunny_p"
+    },
+    "1": {
+      "englishLabel": "Cloudy",
+      "icon": "icon_weather_cloudy",
+      "landscapeCard": "card_cloudy",
+      "portraitCard": "card_cloudy_p",
+      "chineseLabel": "多云",
+      "landscapeAppBackground": "bg_cloudy",
+      "portraitAppBackground": "bg_cloudy_p"
+    },
+    "2": {
+      "englishLabel": "Dreary",
+      "icon": "icon_weather_dready",
+      "landscapeCard": "card_dready",
+      "portraitCard": "card_dready_p",
+      "chineseLabel": "阴",
+      "landscapeAppBackground": "bg_dready",
+      "portraitAppBackground": "bg_dready_p"
+    },
+    "3": {
+      "englishLabel": "Showers",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "阵雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "4": {
+      "englishLabel": "Thundershower",
+      "icon": "icon_weather_thundershower",
+      "landscapeCard": "card_thundershower",
+      "portraitCard": "card_thundershower_p",
+      "chineseLabel": "雷阵雨",
+      "landscapeAppBackground": "bg_thundershower",
+      "portraitAppBackground": "bg_thundershower_p"
+    },
+    "5": {
+      "englishLabel": "Thundershower with hail",
+      "icon": "icon_weather_thundershower",
+      "landscapeCard": "card_thundershower",
+      "portraitCard": "card_thundershower_p",
+      "chineseLabel": "雷阵雨伴有冰雹",
+      "landscapeAppBackground": "bg_thundershower",
+      "portraitAppBackground": "bg_thundershower_p"
+    },
+    "6": {
+      "englishLabel": "Rain and snow",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "雨夹雪",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "7": {
+      "englishLabel": "Light rain",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "小雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "8": {
+      "englishLabel": "Moderate rain",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "中雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "9": {
+      "englishLabel": "Heavy rain",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "大雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "10": {
+      "englishLabel": "Storm",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "暴雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "11": {
+      "englishLabel": "Heavy storm",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "大暴雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "12": {
+      "englishLabel": "Severe storm",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "特大暴雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "13": {
+      "englishLabel": "Snow shower",
+      "icon": "icon_weather_snow",
+      "landscapeCard": "card_snow",
+      "portraitCard": "card_snow_p",
+      "chineseLabel": "阵雪",
+      "landscapeAppBackground": "bg_snow",
+      "portraitAppBackground": "bg_snow_p"
+    },
+    "14": {
+      "englishLabel": "Light snow",
+      "icon": "icon_weather_snow",
+      "landscapeCard": "card_snow",
+      "portraitCard": "card_snow_p",
+      "chineseLabel": "小雪",
+      "landscapeAppBackground": "bg_snow",
+      "portraitAppBackground": "bg_snow_p"
+    },
+    "15": {
+      "englishLabel": "Moderate snow",
+      "icon": "icon_weather_snow",
+      "landscapeCard": "card_snow",
+      "portraitCard": "card_snow_p",
+      "chineseLabel": "中雪",
+      "landscapeAppBackground": "bg_snow",
+      "portraitAppBackground": "bg_snow_p"
+    },
+    "16": {
+      "englishLabel": "Heavy snow",
+      "icon": "icon_weather_snow",
+      "landscapeCard": "card_snow",
+      "portraitCard": "card_snow_p",
+      "chineseLabel": "大雪",
+      "landscapeAppBackground": "bg_snow",
+      "portraitAppBackground": "bg_snow_p"
+    },
+    "17": {
+      "englishLabel": "Snowstorm",
+      "icon": "icon_weather_snow",
+      "landscapeCard": "card_snow",
+      "portraitCard": "card_snow_p",
+      "chineseLabel": "暴雪",
+      "landscapeAppBackground": "bg_snow",
+      "portraitAppBackground": "bg_snow_p"
+    },
+    "18": {
+      "englishLabel": "Fog",
+      "icon": "icon_weather_fog",
+      "landscapeCard": "card_fog",
+      "portraitCard": "card_fog_p",
+      "chineseLabel": "雾",
+      "landscapeAppBackground": "bg_fog",
+      "portraitAppBackground": "bg_fog_p"
+    },
+    "19": {
+      "englishLabel": "Freezing rain",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "冻雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "20": {
+      "englishLabel": "Dust storm",
+      "icon": "icon_weather_cloudy",
+      "landscapeCard": "card_cloudy",
+      "portraitCard": "card_cloudy_p",
+      "chineseLabel": "沙尘暴",
+      "landscapeAppBackground": "bg_cloudy",
+      "portraitAppBackground": "bg_cloudy_p"
+    },
+    "21": {
+      "englishLabel": "Light to moderate rain",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "小到中雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "22": {
+      "englishLabel": "Moderate to heavy rain",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "中到大雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "23": {
+      "englishLabel": "Heavy rain to storm",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "大到暴雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "24": {
+      "englishLabel": "Storm to heavy storm",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "暴雨到大暴雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "25": {
+      "englishLabel": "Heavy to severe storm",
+      "icon": "icon_weather_rain",
+      "landscapeCard": "card_rain",
+      "portraitCard": "card_rain_p",
+      "chineseLabel": "大暴雨到特大暴雨",
+      "landscapeAppBackground": "bg_rain",
+      "portraitAppBackground": "bg_rain_p"
+    },
+    "26": {
+      "englishLabel": "Light to moderate snow",
+      "icon": "icon_weather_snow",
+      "landscapeCard": "card_snow",
+      "portraitCard": "card_snow_p",
+      "chineseLabel": "小到中雪",
+      "landscapeAppBackground": "bg_snow",
+      "portraitAppBackground": "bg_snow_p"
+    },
+    "27": {
+      "englishLabel": "Moderate to heavy snow",
+      "icon": "icon_weather_snow",
+      "landscapeCard": "card_snow",
+      "portraitCard": "card_snow_p",
+      "chineseLabel": "中到大雪",
+      "landscapeAppBackground": "bg_snow",
+      "portraitAppBackground": "bg_snow_p"
+    },
+    "28": {
+      "englishLabel": "Heavy snow to snowstorm",
+      "icon": "icon_weather_snow",
+      "landscapeCard": "card_snow",
+      "portraitCard": "card_snow_p",
+      "chineseLabel": "大到暴雪",
+      "landscapeAppBackground": "bg_snow",
+      "portraitAppBackground": "bg_snow_p"
+    },
+    "29": {
+      "englishLabel": "Dust",
+      "icon": "icon_weather_cloudy",
+      "landscapeCard": "card_cloudy",
+      "portraitCard": "card_cloudy_p",
+      "chineseLabel": "浮尘",
+      "landscapeAppBackground": "bg_cloudy",
+      "portraitAppBackground": "bg_cloudy_p"
+    },
+    "30": {
+      "englishLabel": "Sand",
+      "icon": "icon_weather_cloudy",
+      "landscapeCard": "card_cloudy",
+      "portraitCard": "card_cloudy_p",
+      "chineseLabel": "扬沙",
+      "landscapeAppBackground": "bg_cloudy",
+      "portraitAppBackground": "bg_cloudy_p"
+    },
+    "31": {
+      "englishLabel": "Sandstorm",
+      "icon": "icon_weather_cloudy",
+      "landscapeCard": "card_cloudy",
+      "portraitCard": "card_cloudy_p",
+      "chineseLabel": "强沙尘暴",
+      "landscapeAppBackground": "bg_cloudy",
+      "portraitAppBackground": "bg_cloudy_p"
+    },
+    "53": {
+      "englishLabel": "Haze",
+      "icon": "icon_weather_cloudy",
+      "landscapeCard": "card_cloudy",
+      "portraitCard": "card_cloudy_p",
+      "chineseLabel": "霾",
+      "landscapeAppBackground": "bg_cloudy",
+      "portraitAppBackground": "bg_cloudy_p"
+    }
+  },
+  "forecastRendering": {
+    "hourlyIconConditionKey": "cnweatherid",
+    "hourlyNightState": "NumberUtils.isDuringNight from current observation, shared by all displayed hours",
+    "hourlyUsesIsdaynight": false,
+    "dailyIconConditionKey": "conditionDay.cnweatherid",
+    "dailyUsesConditionNight": false,
+    "dailyNightState": "NumberUtils.isDuringNight from current observation",
+    "nightIcon": "icon_weather_night",
+    "nightOnlyNativeCode": 0
+  }
+}

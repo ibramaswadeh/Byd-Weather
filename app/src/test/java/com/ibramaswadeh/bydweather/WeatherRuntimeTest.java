@@ -3,34 +3,53 @@ package com.ibramaswadeh.bydweather;
 import android.Manifest;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.location.Address;
+import android.location.Geocoder;
+import android.location.Location;
 import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.os.Looper;
+import android.os.SystemClock;
 import java.io.InputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONObject;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.Implementation;
+import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.LooperMode;
+import org.robolectric.annotation.Resetter;
 import org.robolectric.shadows.ShadowNetworkInfo;
 import static org.junit.Assert.*;
 import static org.robolectric.Shadows.shadowOf;
 
 /** Public refresh flow, with only the external HTTP/device adapters supplied by the test. */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 29)
+@Config(sdk = 29, shadows = WeatherRuntimeTest.DeviceGeocoder.class)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class WeatherRuntimeTest {
+    @Before public void configureDeviceGeocoder() {
+        DeviceGeocoder.reset();
+        Address address = new Address(Locale.ENGLISH);
+        address.setLocality("Amman");
+        address.setSubLocality("Al Jubeiha");
+        address.setSubAdminArea("University District");
+        address.setAdminArea("Amman Governorate");
+        DeviceGeocoder.addresses = List.of(address);
+    }
+
     @Test public void stockUpdateFailsAndRetriesWhenNativeProviderIsAbsent() throws Exception {
         exerciseStockRefresh(false);
     }
@@ -39,7 +58,57 @@ public class WeatherRuntimeTest {
         exerciseStockRefresh(true);
     }
 
+    @Test @Config(shadows = {CarplayLocationSourceTest.NmeaUnavailableLocationManager.class,
+            DeviceGeocoder.class})
+    public void stockRefreshUsesLiveGpsCoordinatesWhenNmeaIsUnavailable() throws Exception {
+        exerciseStockRefresh(true);
+    }
+
+    @Test public void usesSubAdministrativeAreaWhenTheCityIsMissing() throws Exception {
+        DeviceGeocoder.addresses.get(0).setLocality("  ");
+        exerciseStockRefresh(true, "University District");
+    }
+
+    @Test public void usesAdministrativeAreaWhenCityAndSubAreaAreMissing() throws Exception {
+        DeviceGeocoder.addresses.get(0).setLocality(null);
+        DeviceGeocoder.addresses.get(0).setSubAdminArea(null);
+        exerciseStockRefresh(true, "Amman Governorate");
+    }
+
+    @Test public void unavailableDeviceGeocoderDoesNotBlockWeatherUpdates() throws Exception {
+        DeviceGeocoder.present = false;
+        exerciseStockRefresh(true, currentLocationLabel());
+    }
+
+    @Test public void emptyGeocoderResultUsesCurrentLocation() throws Exception {
+        DeviceGeocoder.addresses = List.of();
+        exerciseStockRefresh(true, currentLocationLabel());
+    }
+
+    @Test public void geocoderResultWithoutUsableNamesUsesCurrentLocation() throws Exception {
+        DeviceGeocoder.addresses = List.of(new Address(Locale.ENGLISH));
+        exerciseStockRefresh(true, currentLocationLabel());
+    }
+
+    @Test public void geocoderFailureDoesNotBlockWeatherUpdates() throws Exception {
+        DeviceGeocoder.fail = true;
+        exerciseStockRefresh(true, currentLocationLabel());
+    }
+
+    @Test public void preservesTheLocalizedCityReturnedByTheDevice() throws Exception {
+        DeviceGeocoder.addresses.get(0).setLocality("عمّان");
+        exerciseStockRefresh(true, "عمّان");
+    }
+
     private void exerciseStockRefresh(boolean stockAvailable) throws Exception {
+        exerciseStockRefresh(stockAvailable, "Amman");
+    }
+
+    private static String currentLocationLabel() {
+        return RuntimeEnvironment.getApplication().getString(R.string.current_location);
+    }
+
+    private void exerciseStockRefresh(boolean stockAvailable, String expectedName) throws Exception {
         Context context = RuntimeEnvironment.getApplication();
         shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION);
         MemoryStockProvider provider = new MemoryStockProvider();
@@ -73,11 +142,19 @@ public class WeatherRuntimeTest {
         AtomicReference<Long> scheduledDelay = new AtomicReference<>();
         AtomicReference<String> failure = new AtomicReference<>();
         AtomicReference<Boolean> result = new AtomicReference<>();
+        AtomicReference<String> geocoderFallback = new AtomicReference<>();
+        List<String> requestedUrls = new CopyOnWriteArrayList<>();
         WeatherRuntime runtime = new WeatherRuntime(context, preferences, (name, fields) -> {
             if (name.equals("weather_scheduled")) scheduledDelay.set(((Number) fields[1]).longValue());
             if (name.equals("weather_failure")) failure.set(String.valueOf(fields[1]));
+            if (name.equals("weather_geocoder_fallback")) {
+                geocoderFallback.set(String.valueOf(fields[fields.length - 1]));
+            }
         }, url -> {
-            if (url.contains("bigdatacloud")) return new JSONObject().put("locality", "Al Jubeiha Sub-District").put("city", "Amman");
+            requestedUrls.add(url);
+            if (!url.contains("open-meteo.com")) {
+                throw new IllegalStateException("City names must come from the device Geocoder");
+            }
             if (url.contains("air-quality")) throw new IllegalStateException("optional AQ unavailable");
             return forecast;
         });
@@ -87,23 +164,44 @@ public class WeatherRuntimeTest {
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
             while (result.get() == null && System.nanoTime() < deadline) {
                 shadowOf(Looper.getMainLooper()).idle();
-                long now = System.currentTimeMillis();
-                String time = DateTimeFormatter.ofPattern("HHmmss").withZone(ZoneOffset.UTC).format(Instant.ofEpochMilli(now));
-                shadowOf(location).simulateNmeaMessage(NmeaCoordinatesTest.sentence(
-                        "GNGGA," + time + ",4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,"), now);
+                Location fix = new Location(LocationManager.GPS_PROVIDER);
+                fix.setLatitude(31.9539);
+                fix.setLongitude(35.9106);
+                fix.setTime(System.currentTimeMillis());
+                fix.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+                shadowOf(location).simulateLocation(fix);
                 shadowOf(Looper.getMainLooper()).idle();
                 Thread.sleep(10);
             }
             assertEquals("A stock update needs verified provider readback", Boolean.valueOf(stockAvailable), result.get());
+            assertFalse("The GPS fix must drive a weather request", requestedUrls.isEmpty());
+            for (String url : requestedUrls) {
+                assertTrue(url, url.contains("latitude=31.953900&longitude=35.910600"));
+                assertTrue("HTTP requests must only fetch weather or air quality: " + url,
+                        url.contains("open-meteo.com"));
+            }
+            if (DeviceGeocoder.present) {
+                double[] query = DeviceGeocoder.lastQuery.get();
+                assertNotNull("Android Geocoder must receive the live GPS fix", query);
+                assertArrayEquals(new double[]{31.9539, 35.9106, 1}, query, 0.000001);
+            } else {
+                assertNull(DeviceGeocoder.lastQuery.get());
+            }
+            if (expectedName.equals(currentLocationLabel())) assertNotNull(geocoderFallback.get());
+            else assertNull(geocoderFallback.get());
+            assertTrue("One-shot GPS must be released before the update finishes",
+                    shadowOf(location).getLocationUpdateListeners().isEmpty());
             assertFalse(preferences.contains("weather_widget_payload"));
             assertFalse(preferences.contains("weather_last_fetch_ms"));
             if (stockAvailable) {
                 assertEquals(Long.valueOf(TimeUnit.MINUTES.toMillis(180)), scheduledDelay.get());
                 assertNull(failure.get());
                 assertTrue(WeatherMapping.isComplete(provider.payload));
-                assertEquals("Al Jubeiha, Amman", new JSONObject(provider.payload).getJSONObject("data")
+                assertEquals(expectedName, new JSONObject(provider.payload).getJSONObject("data")
                         .getJSONObject("city").getString("name"));
-                assertEquals("Al Jubeiha, Amman", preferences.getString("weather_last_location_name", ""));
+                assertEquals(expectedName, new JSONObject(provider.payload).getJSONObject("data")
+                        .getJSONObject("city").getString("englishCityName"));
+                assertEquals(expectedName, preferences.getString("weather_last_location_name", ""));
                 assertTrue(runtime.lastSuccessMs() > previousNativeSuccess);
                 assertEquals(runtime.lastSuccessMs(), preferences.getLong(WeatherRuntime.PREF_LAST_SUCCESS_MS, 0));
                 assertTrue(shadowOf(RuntimeEnvironment.getApplication()).getBroadcastIntents().stream()
@@ -118,6 +216,32 @@ public class WeatherRuntimeTest {
             runtime.shutdown();
         }
     }
+
+    /** External Android geocoding service; refresh and payload construction remain real. */
+    @Implements(Geocoder.class)
+    public static class DeviceGeocoder {
+        static volatile boolean present;
+        static volatile boolean fail;
+        static volatile List<Address> addresses;
+        static final AtomicReference<double[]> lastQuery = new AtomicReference<>();
+
+        @Implementation protected static boolean isPresent() { return present; }
+
+        @Implementation protected List<Address> getFromLocation(double latitude, double longitude,
+                int maxResults) throws IOException {
+            lastQuery.set(new double[]{latitude, longitude, maxResults});
+            if (fail) throw new IOException("Device geocoding unavailable");
+            return addresses;
+        }
+
+        @Resetter public static void reset() {
+            present = true;
+            fail = false;
+            addresses = List.of();
+            lastQuery.set(null);
+        }
+    }
+
     /** External Android provider adapter with a single persisted weather row. */
     private static final class MemoryStockProvider extends android.content.ContentProvider {
         String payload;

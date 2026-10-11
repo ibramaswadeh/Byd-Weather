@@ -22,7 +22,7 @@ a particular car or firmware.
 The head unit must provide:
 
 - Access to the stock BYD WeatherData provider and widget.
-- GPS that exposes fresh NMEA messages to the app.
+- GPS that delivers fresh location callbacks or NMEA messages to the app.
 - Precise location permission, plus background location permission for startup
   where Android requires it.
 - An internet connection that Android recognizes as usable.
@@ -52,12 +52,60 @@ The stock weather app can still perform its own refresh action.
 
 ## How updates work
 
-The service waits for usable internet, then collects a fresh GPS fix from NMEA
-messages for up to 60 seconds. Cached locations and network-based coordinates
-are not used. GPS listeners are released after acquisition finishes or stops.
+The service waits for usable internet, then collects a fresh GPS fix for up to
+60 seconds. It subscribes to Android GPS updates and NMEA messages. A fresh GPS
+callback or a valid GGA/RMC message can complete acquisition; unavailable NMEA
+access does not block GPS callbacks. Both listeners are released after
+acquisition finishes or stops.
+
+Fixes must be no more than ten seconds old. GPS callbacks use their original
+monotonic fix time, and NMEA messages require a valid checksum, fix status, and
+UTC fix time. Last-known locations and network-based coordinates are not used.
+GPS acquisition always checks the original fix age. Its validation and cleanup
+rules are recorded in [the location contract](docs/gps-location-contract.json).
+
+City names use Android's built-in `Geocoder`, restored from the 1.1.0 release.
+The app displays the returned city, or its sub-administrative/admin area when
+the city is unavailable. If geocoding is unavailable or fails, it displays
+**Current location** and continues the weather update. Availability and naming
+depend on the head unit's geocoding service.
 
 After fetching weather, the app writes it to the BYD provider, reads it back,
 and requests a widget refresh. A successful update advances the saved timestamp.
+The app updates and verifies the provider's first row, matching the stock widget's
+query, even when older integrations have left multiple rows.
+
+In DiLink 3.0 firmware (`18.1.2.2601230.1`), WeatherData
+`2.9.5.250616` selects both the widget label and artwork from `cnweatherid`.
+It ignores the payload's `weathertext` and current day/night flag. Clear weather
+uses native ID `0`, whose stock English label is **Sunny** during both day and
+night. Night artwork is selected separately using the observation timestamp,
+sunset, and next sunrise. Daily records use sunrise anchors so this also works
+before dawn. Changing the payload text cannot change that stock English label.
+
+The night-artwork switch applies only to native ID `0`. Native ID `1`
+(**Cloudy**) always uses the same sun-behind-cloud card, including at night.
+Partly cloudy weather can therefore refresh successfully and still show a sun
+at night. Selecting a moon-and-cloud card requires a change to the stock
+WeatherData widget renderer or resources; the provider payload cannot select
+that artwork.
+
+The firmware's available categories are coarser than Open-Meteo's descriptions:
+mainly clear and partly cloudy both display **Cloudy**, overcast displays
+**Dreary**, and drizzle uses the corresponding rain-intensity label. Light and
+heavy rain share rain artwork; snow intensities similarly share snow artwork.
+The stock hourly list uses the current observation's night state for every
+clear-weather icon, rather than each hour's day/night flag. Daily icons use
+`conditionDay` and that same current night state, ignoring `conditionNight`.
+Those rendering choices belong to WeatherData and cannot be overridden with
+different payload text.
+
+This firmware redraws through its running weather service's observer of
+`time_12_24`; BYD Weather notifies that observer after verifying the committed
+data. A recent successful update confirms the provider write and readback;
+it does not acknowledge rendering on the head unit. The firmware contract,
+artifact hashes, and REA evidence IDs are retained in
+[the test fixture](app/src/test/resources/byd-weatherdata-2.9.5-contract.json).
 
 GPS and weather-fetch failures keep the previous weather data. Failed updates
 leave the saved success timestamp unchanged. Failed provider writes attempt
@@ -73,7 +121,7 @@ the weather update.
 | Symptom | Check |
 | --- | --- |
 | Waiting for GPS or internet | Enable GPS, grant precise location, and check that Android recognizes the internet connection. |
-| Raw GPS unavailable | The head unit must expose fresh NMEA messages. The app retries after five minutes. |
+| GPS unavailable | Enable GPS and precise location access. A fresh GPS callback or NMEA fix must arrive within 60 seconds; the app retries after five minutes. |
 | Update failed | Check the reported error, network access, and access to the BYD weather provider. |
 | Updates stop after reboot | Check both startup switches, background location permission, and DiLink's background settings. |
 | A settings screen is unavailable | Open the relevant system settings from the car launcher. |

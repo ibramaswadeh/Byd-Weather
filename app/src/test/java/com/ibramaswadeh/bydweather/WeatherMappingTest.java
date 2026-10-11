@@ -115,9 +115,21 @@ public class WeatherMappingTest {
     }
 
     @Test public void preservesEveryDocumentedConditionAndItsIntensity() throws Exception {
-        // Expected IDs come from the extracted native icon map; text from the official WMO table.
+        // Policy IDs project WMO conditions onto the stock firmware's coarser categories.
+        // The REA fixture supplies the actual text/artwork selected by those IDs.
         int[] wmo = {0,1,2,3,45,48,51,53,55,56,57,61,63,65,66,67,71,73,75,77,80,81,82,85,86,95,96,97,99};
         int[] nativeId = {0,1,1,2,18,18,7,8,9,19,19,7,8,9,19,19,14,15,16,14,3,3,3,13,13,4,5,4,5};
+        String[] nativeLabel = {"Sunny","Cloudy","Cloudy","Dreary","Fog","Fog",
+                "Light rain","Moderate rain","Heavy rain","Freezing rain","Freezing rain",
+                "Light rain","Moderate rain","Heavy rain","Freezing rain","Freezing rain",
+                "Light snow","Moderate snow","Heavy snow","Light snow","Showers","Showers","Showers",
+                "Snow shower","Snow shower","Thundershower","Thundershower with hail",
+                "Thundershower","Thundershower with hail"};
+        String[] nativeArt = {"sunny","cloudy","cloudy","dready","fog","fog",
+                "rain","rain","rain","rain","rain","rain","rain","rain","rain","rain",
+                "snow","snow","snow","snow","rain","rain","rain","snow","snow",
+                "thundershower","thundershower","thundershower","thundershower"};
+        JSONObject firmwareConditions = FirmwareWeatherContract.descriptors().getJSONObject("conditions");
         String[] label = {"Clear sky","Mainly clear","Partly cloudy","Overcast","Fog","Depositing rime fog",
                 "Light drizzle","Moderate drizzle","Dense drizzle","Light freezing drizzle","Dense freezing drizzle",
                 "Slight rain","Moderate rain","Heavy rain","Light freezing rain","Heavy freezing rain",
@@ -132,12 +144,22 @@ public class WeatherMappingTest {
             JSONObject data = payload(source).getJSONObject("data");
             JSONObject[] conditions = {data.getJSONObject("condition"),
                     data.getJSONObject("hourlys").getJSONArray("hourlyweathers").getJSONObject(0),
+                    data.getJSONObject("hourlys").getJSONArray("hourlyweathers").getJSONObject(7),
                     data.getJSONObject("dailys").getJSONArray("dailyweathers").getJSONObject(1).getJSONObject("conditionDay"),
                     data.getJSONObject("dailys").getJSONArray("dailyweathers").getJSONObject(1).getJSONObject("conditionNight")};
             for (JSONObject condition : conditions) {
                 assertEquals("WMO " + wmo[n], nativeId[n], condition.getInt("cnweatherid"));
                 assertEquals(label[n], condition.getString("weathertext"));
                 assertEquals(wmo[n], condition.getInt("sourceWeatherCode"));
+                JSONObject nativeCondition = firmwareConditions
+                        .getJSONObject(String.valueOf(condition.getInt("cnweatherid")));
+                assertEquals("Firmware text for WMO " + wmo[n],
+                        nativeLabel[n], nativeCondition.getString("englishLabel"));
+                assertEquals("icon_weather_" + nativeArt[n], nativeCondition.getString("icon"));
+                assertEquals("card_" + nativeArt[n], nativeCondition.getString("landscapeCard"));
+                assertEquals("card_" + nativeArt[n] + "_p", nativeCondition.getString("portraitCard"));
+                assertEquals("bg_" + nativeArt[n], nativeCondition.getString("landscapeAppBackground"));
+                assertEquals("bg_" + nativeArt[n] + "_p", nativeCondition.getString("portraitAppBackground"));
             }
         }
     }

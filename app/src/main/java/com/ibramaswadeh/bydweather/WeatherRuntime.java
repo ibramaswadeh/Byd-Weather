@@ -6,7 +6,10 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.database.Cursor;
+import android.location.Address;
+import android.location.Geocoder;
 import android.location.Location;
+import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -21,6 +24,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
@@ -93,8 +97,8 @@ public final class WeatherRuntime {
     private PrerequisiteState waitState = PrerequisiteState.READY;
     private Location callbackLocation;
     private long locationExpiresAtElapsedMs;
-    private long gnssRetryAtElapsedMs;
-    private final RawGnssSource rawGnss;
+    private long locationRetryAtElapsedMs;
+    private final CarplayLocationSource locationSource;
     private ConnectivityManager waitingConnectivityManager;
     private boolean locationCallbackRegistered;
     private boolean networkCallbackRegistered;
@@ -131,7 +135,7 @@ public final class WeatherRuntime {
         Context application = context.getApplicationContext();
         this.context = application == null ? context : application;
         this.preferences = preferences;
-        this.rawGnss = new RawGnssSource(this.context);
+        this.locationSource = new CarplayLocationSource(this.context);
         this.eventSink = eventSink;
         this.lastSuccessMs = preferences.getLong(PREF_LAST_SUCCESS_MS, 0L);
         // Discard only obsolete state from the removed owned forecast renderer.
@@ -192,7 +196,7 @@ public final class WeatherRuntime {
             if (!started || !enabled || inFlight || requestPending) return false;
             cancelScheduledLocked();
             callbackLocation = null;
-            gnssRetryAtElapsedMs = 0L;
+            locationRetryAtElapsedMs = 0L;
             requestPending = true;
             pendingGeneration = generation;
             pendingReason = reason == null ? "manual" : reason;
@@ -254,7 +258,7 @@ public final class WeatherRuntime {
             emit("weather_request", "reason", reason);
             if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
             String query = coordinateQuery(location);
-            JSONObject geocoding = geocode(query);
+            City city = geocode(location);
             JSONObject forecast = jsonFetcher.fetch("https://api.open-meteo.com/v1/forecast?" + query
                     + "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,uv_index"
                     + "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day,relative_humidity_2m,cloud_cover,wind_gusts_10m"
@@ -267,8 +271,8 @@ public final class WeatherRuntime {
             } catch (Exception ignored) {
                 emit("weather_aqi_unavailable");
             }
-            String payload = WeatherMapping.toBydJson(forecast, aqi, geocoding,
-                    friendlyLocationFallback(), System.currentTimeMillis());
+            String payload = WeatherMapping.toBydJson(forecast, aqi, city.localName,
+                    city.englishName, System.currentTimeMillis());
             String locationName = new JSONObject(payload).getJSONObject("data")
                     .getJSONObject("city").getString("name");
             if (!WeatherMapping.isComplete(payload)) throw new IllegalStateException("incomplete BYD payload");
@@ -352,9 +356,8 @@ public final class WeatherRuntime {
                 restoreProvider(resolver, uri, old, written, inserted, payload);
                 return false;
             }
-            ProviderRow readback = readProvider(resolver, uri, "_id=?",
-                    new String[]{String.valueOf(written.id)});
-            if (readback == null || !payload.equals(readback.name)) {
+            ProviderRow readback = readProvider(resolver, uri, null, null);
+            if (readback == null || readback.id != written.id || !payload.equals(readback.name)) {
                 restoreProvider(resolver, uri, old, written, inserted, payload);
                 return false;
             }
@@ -379,11 +382,12 @@ public final class WeatherRuntime {
 
     private ProviderRow readProvider(ContentResolver resolver, android.net.Uri uri,
             String selection, String[] selectionArgs) {
-        try (Cursor cursor = resolver.query(uri, new String[]{"_id", "name"},
-                selection, selectionArgs, "_id DESC")) {
+        // Match native WeatherQueryUtil's projection and unsorted moveToFirst().
+        try (Cursor cursor = resolver.query(uri, null, selection, selectionArgs, null)) {
             if (cursor == null) throw new IllegalStateException("weather provider query failed");
             if (!cursor.moveToFirst()) return null;
-            return new ProviderRow(cursor.getLong(0), cursor.getString(1));
+            return new ProviderRow(cursor.getLong(cursor.getColumnIndexOrThrow("_id")),
+                    cursor.getString(cursor.getColumnIndexOrThrow("name")));
         }
     }
 
@@ -569,19 +573,19 @@ public final class WeatherRuntime {
     }
 
     private void registerLocationCallbackLocked() {
-        if (locationCallbackRegistered || SystemClock.elapsedRealtime() < gnssRetryAtElapsedMs) return;
+        if (locationCallbackRegistered || SystemClock.elapsedRealtime() < locationRetryAtElapsedMs) return;
         locationCallbackRegistered = true;
         long token = pendingGeneration;
-        rawGnss.acquire(fix -> {
+        locationSource.acquire(fix -> {
             synchronized (stateLock) {
                 if (!started || !enabled || !requestPending || token != pendingGeneration
                         || !locationCallbackRegistered) return;
                 locationCallbackRegistered = false;
-                Location coordinates = new Location("raw-gnss");
-                coordinates.setLatitude(fix.coordinates.latitude);
-                coordinates.setLongitude(fix.coordinates.longitude);
+                Location coordinates = new Location(LocationManager.GPS_PROVIDER);
+                coordinates.setLatitude(fix.latitude);
+                coordinates.setLongitude(fix.longitude);
                 locationExpiresAtElapsedMs = fix.expiresAtElapsedMs;
-                prerequisiteChanged("raw_gps", coordinates);
+                prerequisiteChanged("gps", coordinates);
             }
         }, error -> {
             ResultCallback callback;
@@ -590,7 +594,7 @@ public final class WeatherRuntime {
                         || !locationCallbackRegistered) return;
                 locationCallbackRegistered = false;
                 callbackLocation = null;
-                gnssRetryAtElapsedMs = SystemClock.elapsedRealtime()
+                locationRetryAtElapsedMs = SystemClock.elapsedRealtime()
                         + TimeUnit.MINUTES.toMillis(RETRY_INTERVAL_MINUTES);
                 callback = pendingCallback;
                 pendingCallback = null;
@@ -627,7 +631,7 @@ public final class WeatherRuntime {
 
     private void unregisterLocationCallbackLocked() {
         if (!locationCallbackRegistered) return;
-        rawGnss.cancel();
+        locationSource.cancel();
         locationCallbackRegistered = false;
     }
 
@@ -670,20 +674,41 @@ public final class WeatherRuntime {
         }
     }
 
-    private JSONObject geocode(String coordinateQuery) {
-        String language = normalizedLanguage(Locale.getDefault().getLanguage());
+    private City geocode(Location location) {
+        String language = Locale.getDefault().getLanguage();
+        String fallback = friendlyLocationFallback();
+        double latitude = location.getLatitude();
+        double longitude = location.getLongitude();
+        String failureReason = null;
         try {
-            // The free client endpoint only accepts the calling device's live position.
             if (SystemClock.elapsedRealtime() > locationExpiresAtElapsedMs) {
-                throw new IllegalStateException("GPS fix expired before geocoding");
+                failureReason = "fix_expired";
+            } else if (!Geocoder.isPresent()) {
+                failureReason = "provider_unavailable";
             }
-            return jsonFetcher.fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?"
-                    + coordinateQuery + "&localityLanguage=" + URLEncoder.encode(language, "UTF-8"));
-        } catch (Exception failure) {
-            emit("weather_geocoder_fallback", "provider", "BigDataCloud",
-                    "ui_language", language, "reason", summary(failure));
-            return null;
+        } catch (Throwable failure) {
+            failureReason = "availability_check_failed:" + summary(failure);
         }
+        if (failureReason == null) {
+            try {
+                List<Address> addresses = new Geocoder(context).getFromLocation(
+                        latitude, longitude, 1);
+                if (addresses != null && !addresses.isEmpty()) {
+                    Address address = addresses.get(0);
+                    String city = firstNonEmpty(address.getLocality(), address.getSubAdminArea(),
+                            address.getAdminArea());
+                    if (city != null) return new City(city, city);
+                    failureReason = "no_usable_name";
+                } else {
+                    failureReason = "no_result";
+                }
+            } catch (Throwable failure) {
+                failureReason = summary(failure);
+            }
+        }
+        emit("weather_geocoder_fallback", "ui_language", normalizedLanguage(language),
+                "latitude", latitude, "longitude", longitude, "reason", failureReason);
+        return new City(fallback, fallback);
     }
 
     static String normalizedLanguage(String language) {
@@ -692,6 +717,11 @@ public final class WeatherRuntime {
 
     private String friendlyLocationFallback() {
         return context.getString(R.string.current_location);
+    }
+
+    static String firstNonEmpty(String... values) {
+        for (String value : values) if (value != null && !value.trim().isEmpty()) return value;
+        return null;
     }
 
     private static JSONObject getJson(String url) throws Exception {
@@ -760,7 +790,7 @@ public final class WeatherRuntime {
 
     private void clearPendingLocked() {
         callbackLocation = null;
-        gnssRetryAtElapsedMs = 0L;
+        locationRetryAtElapsedMs = 0L;
         requestPending = false;
         prerequisiteCheckQueued = false;
         prerequisiteRecheckRequested = false;
@@ -803,6 +833,15 @@ public final class WeatherRuntime {
         LocationSnapshot(boolean authorized, Location value) {
             this.authorized = authorized;
             this.value = value;
+        }
+    }
+
+    private static final class City {
+        final String localName;
+        final String englishName;
+        City(String localName, String englishName) {
+            this.localName = localName;
+            this.englishName = englishName;
         }
     }
 

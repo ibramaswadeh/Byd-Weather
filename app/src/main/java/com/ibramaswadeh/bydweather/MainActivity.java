@@ -285,7 +285,7 @@ public final class MainActivity extends Activity {
                 if (!permissionPrompt) promptForBydStartupIfNeeded();
             } else {
                 weatherSwitch.setChecked(false);
-                Toast.makeText(this, "Precise location is required for raw GPS weather", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Precise location is required for GPS weather", Toast.LENGTH_LONG).show();
             }
         } else if (code == REQUEST_BACKGROUND_LOCATION) {
             if (Build.VERSION.SDK_INT >= 29

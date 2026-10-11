@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "implementation": "app/src/main/java/com/ibramaswadeh/bydweather/CarplayLocationSource.java",
+  "acquisition": {
+    "provider": "gps",
+    "minimum_interval_ms": 1000,
+    "minimum_distance_m": 0,
+    "nmea_optional": true,
+    "nmea_sentence_types": ["GGA", "RMC"],
+    "timeout_ms": 60000,
+    "completion": "First valid GPS callback or NMEA fix completes one acquisition. Unavailable NMEA access does not block GPS updates."
+  },
+  "validation": {
+    "maximum_fix_age_ms": 10000,
+    "future_tolerance_ms": 2000,
+    "gps": "Require the GPS provider, finite coordinates within latitude/longitude bounds, and a recent original elapsedRealtimeNanos timestamp.",
+    "nmea": "Validate the checksum, fix status, coordinates, message timestamp, and original UTC fix time.",
+    "cached_locations_used": false,
+    "network_locations_used": false
+  },
+  "lifecycle": {
+    "listener_cleanup": ["completion", "failure", "cancellation", "replacement", "timeout", "GPS disabled"],
+    "late_callbacks": "Generation checks suppress callbacks from completed or cancelled acquisitions.",
+    "failure": "Keep the previous weather and retry after five minutes."
+  }
+}

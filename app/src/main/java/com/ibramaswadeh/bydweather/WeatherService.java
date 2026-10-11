@@ -92,7 +92,7 @@ public final class WeatherService extends Service {
         } else if ("weather_authorization_required".equals(name)) {
             status = "Precise GPS permission is required";
         } else if ("weather_gps_unavailable".equals(name)) {
-            status = "Raw GPS unavailable; keeping last weather, retrying in 5 minutes";
+            status = "GPS unavailable; keeping last weather, retrying in 5 minutes";
         } else if ("weather_failure".equals(name)) {
             Object reason = fields.length >= 2 ? fields[1] : "unknown error";
             status = "Update failed: " + reason;
