@@ -29,8 +29,6 @@ import org.robolectric.annotation.LooperMode;
 import org.robolectric.shadows.ShadowContentResolver;
 import org.robolectric.shadows.ShadowNetworkInfo;
 
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -53,15 +51,15 @@ public class WeatherWidgetRefreshTest {
     @Test public void nativeFirstRowReflectsBothSuccessfulRefreshesWhenProviderHasMultipleRows()
             throws Exception {
         try (RefreshFixture fixture = new RefreshFixture()) {
-            fixture.provider.seed(payload(forecast(0, 11)));
-            String untouchedSecondRow = payload(forecast(3, 22));
+            fixture.provider.seed(payload(forecast("clearsky_day", 11)));
+            String untouchedSecondRow = payload(forecast("cloudy", 22));
             long secondRowId = fixture.provider.seed(untouchedSecondRow);
 
-            fixture.forecast.set(forecast(61, 33));
+            fixture.forecast.set(forecast("lightrain", 33));
             fixture.refresh();
             JSONObject firstRefresh = new JSONObject(nativeWeatherJson(fixture.context));
 
-            fixture.forecast.set(forecast(71, 44));
+            fixture.forecast.set(forecast("lightsnow", 44));
             fixture.refresh();
             JSONObject secondRefresh = new JSONObject(nativeWeatherJson(fixture.context));
 
@@ -84,7 +82,7 @@ public class WeatherWidgetRefreshTest {
     @Test public void nativeTimeFormatObserverSeesFreshWeatherOnEachSuccessfulRefresh()
             throws Exception {
         try (RefreshFixture fixture = new RefreshFixture()) {
-            fixture.provider.seed(payload(forecast(0, 11)));
+            fixture.provider.seed(payload(forecast("clearsky_day", 11)));
             List<String> renderedPayloads = new ArrayList<>();
             // REA: RequestService observes this Settings URI on its main Handler;
             // TimeFormatChangeObserver.onChange immediately requests a widget redraw.
@@ -96,7 +94,7 @@ public class WeatherWidgetRefreshTest {
             fixture.context.getContentResolver().registerContentObserver(
                     Settings.System.getUriFor("time_12_24"), false, observer);
             try {
-                fixture.forecast.set(forecast(61, 33));
+                fixture.forecast.set(forecast("lightrain", 33));
                 fixture.refresh();
                 assertEquals("One redraw notification is required per successful refresh",
                         1, renderedPayloads.size());
@@ -104,9 +102,9 @@ public class WeatherWidgetRefreshTest {
                         .getJSONObject("data").getJSONObject("condition");
                 assertEquals(33, firstCondition.getInt("temperature"));
                 assertEquals(7, firstCondition.getInt("cnweatherid"));
-                assertEquals("Slight rain", firstCondition.getString("weathertext"));
+                assertEquals("Light rain", firstCondition.getString("weathertext"));
 
-                fixture.forecast.set(forecast(71, 44));
+                fixture.forecast.set(forecast("lightsnow", 44));
                 fixture.refresh();
                 assertEquals("Both committed updates must notify the native observer",
                         2, renderedPayloads.size());
@@ -114,7 +112,7 @@ public class WeatherWidgetRefreshTest {
                         .getJSONObject("data").getJSONObject("condition");
                 assertEquals(44, secondCondition.getInt("temperature"));
                 assertEquals(14, secondCondition.getInt("cnweatherid"));
-                assertEquals("Slight snowfall", secondCondition.getString("weathertext"));
+                assertEquals("Light snow", secondCondition.getString("weathertext"));
             } finally {
                 fixture.context.getContentResolver().unregisterContentObserver(observer);
             }
@@ -122,11 +120,12 @@ public class WeatherWidgetRefreshTest {
     }
 
     @Test public void clearNightRefreshReplacesStaleDayArtworkInNativeFirstRow() throws Exception {
-        try (RefreshFixture fixture = new RefreshFixture()) {
-            JSONObject clearDay = forecast(0, 25);
-            clearDay.getJSONObject("current").put("time", "2026-10-02T12:00").put("is_day", 1);
+        long day = java.time.LocalDate.of(2026, 10, 12).atTime(12, 0)
+                .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+        try (RefreshFixture fixture = new RefreshFixture(day)) {
+            JSONObject clearDay = MetFixtures.forecast(day, "clearsky_day", 25);
             fixture.provider.seed(payload(clearDay));
-            fixture.provider.seed(payload(forecast(3, 22)));
+            fixture.provider.seed(payload(forecast("cloudy", 22)));
             assertEquals("card_sunny", FirmwareWeatherContract.widgetBackground(
                     new JSONObject(nativeWeatherJson(fixture.context)), false));
 
@@ -139,8 +138,8 @@ public class WeatherWidgetRefreshTest {
             fixture.context.getContentResolver().registerContentObserver(
                     Settings.System.getUriFor("time_12_24"), false, observer);
             try {
-                JSONObject clearNight = forecast(0, 18);
-                clearNight.getJSONObject("current").put("time", "2026-10-02T22:00").put("is_day", 0);
+                fixture.clock.set(day + TimeUnit.HOURS.toMillis(10));
+                JSONObject clearNight = MetFixtures.forecast(fixture.clock.get(), "clearsky_night", 18);
                 fixture.forecast.set(clearNight);
                 fixture.refresh();
 
@@ -161,7 +160,7 @@ public class WeatherWidgetRefreshTest {
     @Test public void refreshRejectsHiddenInsertAndPreservesTheCompetingNativeFirstRow()
             throws Exception {
         try (RefreshFixture fixture = new RefreshFixture()) {
-            String competingPayload = payload(forecast(0, 11));
+            String competingPayload = payload(forecast("clearsky_day", 11));
             fixture.provider.beforeNextInsert = () -> fixture.provider.seed(competingPayload);
             long previousSuccess = fixture.runtime.lastSuccessMs();
             AtomicInteger redrawNotifications = new AtomicInteger();
@@ -195,18 +194,13 @@ public class WeatherWidgetRefreshTest {
         }
     }
 
-    private static JSONObject forecast(int code, int temperature) throws Exception {
-        try (InputStream stream = WeatherWidgetRefreshTest.class
-                .getResourceAsStream("/amman-open-meteo.json")) {
-            assertNotNull(stream);
-            JSONObject result = new JSONObject(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
-            result.getJSONObject("current").put("weather_code", code).put("temperature_2m", temperature);
-            return result;
-        }
+    private static JSONObject forecast(String symbol, int temperature) throws Exception {
+        return MetFixtures.forecast(System.currentTimeMillis(), symbol, temperature);
     }
 
     private static String payload(JSONObject forecast) throws Exception {
-        String result = WeatherMapping.toBydJson(forecast, null, "Amman", "Amman", 1_791_110_000_000L);
+        String result = WeatherMapping.toBydJson(MetFixtures.load(forecast,
+                MetForecast.parse(forecast).points.get(0).time + 30 * 60_000, java.time.ZoneId.systemDefault()), "Amman", "Amman");
         assertTrue(WeatherMapping.isComplete(result));
         return result;
     }
@@ -214,11 +208,15 @@ public class WeatherWidgetRefreshTest {
     private static final class RefreshFixture implements AutoCloseable {
         final Context context = RuntimeEnvironment.getApplication();
         final SQLiteStockProvider provider = new SQLiteStockProvider();
-        final AtomicReference<JSONObject> forecast = new AtomicReference<>(forecast(3, 25));
+        final AtomicReference<JSONObject> forecast = new AtomicReference<>(forecast("cloudy", 25));
         final LocationManager location;
         final WeatherRuntime runtime;
+        final java.util.concurrent.atomic.AtomicLong clock;
 
-        RefreshFixture() throws Exception {
+        RefreshFixture() throws Exception { this(System.currentTimeMillis()); }
+
+        RefreshFixture(long time) throws Exception {
+            clock = new java.util.concurrent.atomic.AtomicLong(time);
             shadowOf(RuntimeEnvironment.getApplication())
                     .grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION);
             ProviderInfo info = new ProviderInfo();
@@ -241,11 +239,10 @@ public class WeatherWidgetRefreshTest {
             SharedPreferences preferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE);
             preferences.edit().clear().putBoolean(WeatherRuntime.PREF_ENABLED, true)
                     .putInt(WeatherRuntime.PREF_INTERVAL_MINUTES, 180)
-                    .putLong(WeatherRuntime.PREF_LAST_SUCCESS_MS, System.currentTimeMillis() - 60_000).apply();
+                    .putLong(WeatherRuntime.PREF_LAST_SUCCESS_MS, clock.get() - 60_000).apply();
             runtime = new WeatherRuntime(context, preferences, null, url -> {
-                if (url.contains("air-quality")) throw new IllegalStateException("optional AQ unavailable");
-                return forecast.get();
-            });
+                return MetFixtures.response(url, forecast.get());
+            }, clock::get);
             runtime.start();
         }
 

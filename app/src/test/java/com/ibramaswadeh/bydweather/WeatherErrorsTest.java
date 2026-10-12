@@ -13,7 +13,7 @@ public class WeatherErrorsTest {
         String message = WeatherErrors.describe(WeatherErrors.Stage.FORECAST,
                 new IOException("private-request-data", new UnknownHostException("private-request-data")));
         assertTrue(message.contains("DNS"));
-        assertTrue(message.contains("api.open-meteo.com"));
+        assertTrue(message.contains("api.met.no"));
         assertFalse(message.contains("private-request-data"));
     }
 
@@ -42,7 +42,7 @@ public class WeatherErrorsTest {
     @Test public void parsingAndWidgetFailuresIdentifyTheirDifferentSteps() {
         String parsing = WeatherErrors.describe(WeatherErrors.Stage.RESPONSE,
                 new JSONException("latitude=private-request-data"));
-        assertTrue(parsing.contains("Forecast data"));
+        assertTrue(parsing.contains("Weather data"));
         assertFalse(parsing.contains("private-request-data"));
         String widget = WeatherErrors.describe(WeatherErrors.Stage.WIDGET,
                 new SecurityException("provider-private-data"));

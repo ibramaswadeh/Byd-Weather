@@ -1,13 +1,15 @@
 # BYD Weather
 
 Keeps the stock BYD weather widget updated with local forecasts from
-[Open-Meteo](https://open-meteo.com/). Runs as a background service on compatible
+[MET Norway](https://www.met.no/en). Runs as a background service on compatible
 Chinese DiLink head units, with a small settings screen for permissions and
 refresh controls.
 
 ## Features
 
-- Current weather, hourly and daily forecasts, and air quality when available.
+- Current conditions, hourly forecasts, and seven future days from MET Norway.
+- Sunrise and sunset for native day/night selection; optional air quality in Norway.
+- Persistent HTTP caching and conditional requests to reduce repeat downloads.
 - Automatic updates every 15 minutes by default; adjustable from 5 to 180 minutes.
 - Optional startup with the car and a persistent status notification.
 - Manual updates from the app or, optionally, the stock widget's refresh button.
@@ -41,16 +43,18 @@ The app does not require root, ADB, or a weather API key.
    Use **Grant background location** to allow location access all the time
    when Android offers that option.
 3. Enable **Start automatically with the car** if you want automatic startup.
-   Open **Open BYD background-start settings** and allow startup and background
+   Expand **Car setup and data coverage**, open **Open BYD background-start settings**,
+   and allow startup and background
    operation in DiLink's app manager.
-4. Enable Android location, connect to the internet, and choose **Location method**:
+4. Enable Android location, connect to the internet, and choose a **Location** option:
    **Automatic** prefers GPS and falls back to Wi-Fi/cell; **Wi-Fi/cell only**
    requests the car's network-location provider without GPS/NMEA listeners.
    Use Wi-Fi/cell only when GPS is unreliable. Tap **Update weather now**.
    Check the app's status and last successful update time, and confirm the
    stock widget changes.
 5. Set your preferred refresh interval.
-6. Optional: tap **Enable stock weather refresh button** and enable
+6. Optional: under **Car setup and data coverage**, tap
+   **Enable stock weather refresh button** and enable
    **BYD Weather refresh button** in Android Accessibility settings.
 
 Accessibility is only needed for updates triggered by the stock widget's button.
@@ -81,7 +85,7 @@ provider** when it does not. OEM providers can reuse positions and rewrite fix
 timestamps; the Android callback alone cannot prove an independent, freshly
 measured radio fix. Wi-Fi/cell-only mode controls which provider this app requests.
 
-City names use Android's built-in `Geocoder`, restored from the 1.1.0 release.
+City names use Android's built-in `Geocoder`.
 The app displays the returned city, or its sub-administrative/admin area when
 the city is unavailable. If geocoding is unavailable or fails, it displays
 **Current location** and continues the weather update. Availability and naming
@@ -97,7 +101,7 @@ In DiLink 3.0 firmware (`18.1.2.2601230.1`), WeatherData
 `2.9.5.250616` selects both the widget label and artwork from `cnweatherid`.
 It ignores the payload's `weathertext` and current day/night flag. Clear weather
 uses native ID `0`, whose stock English label is **Sunny** during both day and
-night. Night artwork is selected separately using the observation timestamp,
+night. Night artwork is selected separately using the refresh timestamp,
 sunset, and next sunrise. Daily records use sunrise anchors so this also works
 before dawn. Changing the payload text cannot change that stock English label.
 
@@ -108,11 +112,11 @@ at night. Selecting a moon-and-cloud card requires a change to the stock
 WeatherData widget renderer or resources; the provider payload cannot select
 that artwork.
 
-The firmware's available categories are coarser than Open-Meteo's descriptions:
+The firmware's available categories are coarser than MET's descriptions:
 mainly clear and partly cloudy both display **Cloudy**, overcast displays
-**Dreary**, and drizzle uses the corresponding rain-intensity label. Light and
+**Dreary**, and all rain showers share the native shower category. Light and
 heavy rain share rain artwork; snow intensities similarly share snow artwork.
-The stock hourly list uses the current observation's night state for every
+The stock hourly list uses the current refresh's night state for every
 clear-weather icon, rather than each hour's day/night flag. Daily icons use
 `conditionDay` and that same current night state, ignoring `conditionNight`.
 Those rendering choices belong to WeatherData and cannot be overridden with
@@ -134,6 +138,57 @@ the app waits for location or network recovery; revoked location permission must
 restored before updates can resume. An air-quality fetch failure does not block
 the weather update.
 
+## Weather coverage and mapping
+
+All weather requests use `https://api.met.no/weatherapi/`:
+
+| Product | Use |
+| --- | --- |
+| `locationforecast/2.0/complete` | Global temperature, conditions, wind, humidity, pressure, and forecasts. |
+| `sunrise/3.0/sun` | Sunrise and sunset for yesterday, today, and seven future days. |
+| `airqualityforecast/0.1/` | Optional Norwegian air-quality forecast where coverage is expected. |
+
+No API key is needed. Requests identify the application and public project URL,
+limit forecast coordinates to four decimal places, support gzip and redirects,
+and use disk caching with `Expires`/`Cache-Control` and `If-Modified-Since`.
+`Retry-After` is respected for rate limits and temporary service failures.
+Solar coordinates use two decimal places to reduce duplicate requests from GPS drift.
+Caches remain in private app storage and can be cleared through Android app settings.
+
+The native hourly strip needs the current forecast hour plus seven subsequent
+hours. The daily strip displays tomorrow through day seven. MET's later forecast
+points are typically six hours apart; the app summarizes available points and
+six-hour temperature extrema contained within each local date. The day's most
+significant available condition supplies its native icon. Earlier forecasts from
+the same location are retained for today's range, but the first update of a day
+may only describe its remaining hours. These are forecast summaries, not measured
+24-hour extrema. Calendar dates and labels follow the car's configured time zone.
+
+Missing source data is kept explicit:
+
+- **Visibility:** Locationforecast does not provide it. The integer-only stock
+  field receives `-1`; the factory detail screen may display that number. The
+  main launcher card does not use visibility.
+- **UV:** MET supplies a clear-sky forecast, not cloud-adjusted exposure. An absent
+  UV reading is unavailable. The app's data coverage panel explains this distinction.
+- **Air quality:** unavailable outside Norwegian coverage. In Norway the app shows
+  the Norwegian health-risk category and index, and retains PM2.5/PM10 where supplied.
+  The stock category remains unavailable (`lv=0`): its Chinese AQI labels cannot
+  be populated by renaming Norway's different index.
+- **Other values:** feels-like temperature, gusts, and precipitation probability
+  are included only where supplied. Hail, dust, and other unsupported conditions
+  are not inferred. The app preserves MET shower/intensity text, although the
+  stock renderer uses its own coarser categories.
+- **Polar dates:** absent sunrise or sunset events remain absent. Timing sentinels
+  preserve the factory night comparison without inserting imaginary hourly events.
+
+A forecast or required astronomy failure preserves the previous widget data.
+Optional air-quality failure reports a notice and allows the weather update.
+See [the MET integration contract](docs/met-weather-contract.md) for mapping and
+source references. MET's [terms of service](https://docs.api.met.no/doc/TermsOfService.html)
+apply; deployments approaching its aggregate request limits need coordinated caching
+or an agreement with the provider.
+
 ## Troubleshooting and limits
 
 | Symptom | Check |
@@ -142,14 +197,15 @@ the weather update.
 | Location unavailable | Check Android location settings and permission. Try Wi-Fi/cell only if GPS is unreliable; the car must expose a working network provider. |
 | Wi-Fi/cell location provider unavailable or off | Enable network location in Android settings if offered. An installed provider APK alone does not establish that it is bound and delivering fixes. |
 | Weather download failed | The message distinguishes DNS, timeout, secure-connection, and API errors. Check internet access; check date/time for secure-connection failures. |
-| Forecast data could not be read | Retry the update or update BYD Weather. The previous weather is kept. |
+| Weather data is incomplete or could not be read | Check the car’s date, time, and time zone, then retry or update BYD Weather. The previous weather is kept. |
+| Sunrise/sunset download failed | The weather forecast arrived, but required astronomy data could not be fetched. The previous widget data is kept. |
 | BYD widget update failed | Check access to the stock weather provider and firmware compatibility. |
 | Updates stop after reboot | Check both startup switches, background location permission, and DiLink's background settings. |
 | A settings screen is unavailable | Open the relevant system settings from the car launcher. |
 | Last successful time stays unchanged | A location fix or weather request alone is not enough; the provider update must succeed. |
 
 Provider access, location delivery, and automatic startup depend on DiLink firmware.
-Automated tests cover parsing, navigation, and icon rendering; they do not
+Automated tests cover parsing, HTTP caching, provider refreshes, native mapping, and screen layout; they do not
 establish those behaviors on a physical head unit.
 
 ## Build
@@ -202,13 +258,11 @@ With a device or emulator connected, run the icon rendering tests:
 ./gradlew connectedDebugAndroidTest
 ```
 
-The [GitHub Actions workflow](.github/workflows/android.yml) also runs these
-checks and captures icons on Android 10 emulators at head-unit and phone sizes.
-
 ## License and credits
 
 Licensed under [AGPL-3.0-only](LICENSE). The weather adapter originates from
 [BYD Extend](https://github.com/sunlixWhyNotAvailable/byd-turnsignal-cameraview).
 
-Weather data comes from Open-Meteo; attribution appears in the app and weather
-payload. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for credits.
+Weather data comes from MET Norway under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
+attribution appears in the app and weather payload. The app derives daily summaries
+and translates MET symbols to the stock widget’s condition families. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for credits.

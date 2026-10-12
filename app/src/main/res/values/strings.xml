@@ -1,4 +1,25 @@
 <resources>
     <string name="current_location">Current location</string>
-    <string name="refresh_accessibility_description">Refresh the stock BYD weather display using Open-Meteo when its refresh button is tapped.</string>
+    <string name="refresh_accessibility_description">Refresh the stock BYD weather display using MET Norway when its refresh button is tapped.</string>
+    <string name="app_title">BYD Weather</string>
+    <string name="app_subtitle">Forecasts for your BYD widget</string>
+    <string name="updates_heading">Weather updates</string>
+    <string name="keep_updated">Keep weather updated</string>
+    <string name="update_now">Update weather now</string>
+    <string name="updating_weather">Updating weather…</string>
+    <string name="interval_value">%1$d</string>
+    <string name="location_permission_summary">%1$s · %2$s</string>
+    <string name="location_heading">Location</string>
+    <string name="location_automatic">Automatic: GPS with Wi-Fi/cell fallback</string>
+    <string name="location_network">Wi-Fi/cell only</string>
+    <string name="grant_location">Grant background location</string>
+    <string name="schedule_heading">Schedule</string>
+    <string name="refresh_interval">Refresh interval\n5–180 minutes</string>
+    <string name="auto_start">Start automatically with the car</string>
+    <string name="show_setup">Car setup and data coverage</string>
+    <string name="hide_setup">Hide setup and data coverage</string>
+    <string name="background_hint">In DiLink, allow BYD Weather to auto-start and run in the background.</string>
+    <string name="accessibility_setup">Select BYD Weather refresh button in Accessibility settings. It observes only taps in BYD WeatherData so its refresh button can also update MET Norway forecasts.</string>
+    <string name="coverage_heading">Data coverage</string>
+    <string name="data_coverage">Hourly and seven-day forecasts use MET Norway. Times follow the car’s time zone. Today’s high and low use available forecast hours, including earlier hours saved by this app.\n\nVisibility is unavailable; the stock detail screen may show −1. UV is a clear-sky forecast. Air quality covers Norway only, and its health-risk index appears here after an update. The stock air-quality category remains unavailable because it uses a different scale.</string>
 </resources>

@@ -1,0 +1,5 @@
+<resources>
+    <color name="weather_background">#10233A</color>
+    <color name="weather_surface">#25435F</color>
+    <color name="weather_accent">#64C3FF</color>
+</resources>

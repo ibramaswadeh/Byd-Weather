@@ -51,7 +51,7 @@ public class MainActivityUpdateTest {
         assertFalse(update.isEnabled());
         assertNotNull(MainActivityNavigationTest.find(root, progress.getString("message")));
 
-        String error = "Weather download failed: api.open-meteo.com could not be resolved (DNS). Check the car's internet connection.";
+        String error = "Weather download failed: api.met.no could not be resolved (DNS). Check the car's internet connection.";
         RuntimeEnvironment.getApplication().getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
                 .putString(WeatherService.KEY_STATUS, error).apply();
         Bundle failure = new Bundle();

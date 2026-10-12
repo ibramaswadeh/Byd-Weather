@@ -54,7 +54,7 @@ public class MainActivityNavigationTest {
     @Test public void missingBrowserDoesNotCrashOrFinish() {
         MainActivity activity = Robolectric.buildActivity(MainActivity.class).setup().get();
         shadowOf(RuntimeEnvironment.getApplication()).checkActivities(true);
-        find(activity.getWindow().getDecorView(), "Weather data by Open-Meteo.com").performClick();
+        find(activity.getWindow().getDecorView(), "Weather data: MET Norway (CC BY 4.0)").performClick();
         assertFalse(activity.isFinishing());
         assertNotNull(ShadowToast.getTextOfLatestToast());
     }

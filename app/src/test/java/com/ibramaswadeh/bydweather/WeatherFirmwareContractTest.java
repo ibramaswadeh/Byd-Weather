@@ -7,9 +7,7 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.TimeZone;
 
@@ -21,24 +19,16 @@ public class WeatherFirmwareContractTest {
     @Test public void clearWeatherSelectsNightArtworkBeforeDawnAndAfterSunset() throws Exception {
         TimeZone original = TimeZone.getDefault();
         try {
-            // Native night selection uses epoch times, independent of the car's display zone.
             TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
-            for (String clock : new String[]{"02:00", "12:00", "22:00"}) {
-                JSONObject source = forecast();
-                String time = "2026-10-02T" + clock;
-                boolean day = clock.equals("12:00");
-                source.getJSONObject("current").put("time", time)
-                        .put("weather_code", 0).put("is_day", day ? 1 : 0);
-                JSONObject payload = payload(source);
-                assertEquals(LocalDateTime.parse(time).atZone(ZoneId.of("Asia/Amman"))
-                        .toInstant().toEpochMilli(), payload.getJSONObject("data")
-                        .getJSONObject("condition").getLong("updatetime"));
+            for (int hour : new int[]{2, 12, 22}) {
+                long time = LocalDate.of(2026, 10, 12).atTime(hour, 0).atZone(MetFixtures.ZONE).toInstant().toEpochMilli();
+                boolean day = hour == 12;
+                JSONObject payload = MetFixtures.payload(time, "clearsky_day");
+                assertTrue(WeatherMapping.isComplete(payload.toString()));
+                assertEquals(time, payload.getJSONObject("data").getJSONObject("condition").getLong("updatetime"));
                 assertEquals(!day, FirmwareWeatherContract.isDuringNight(payload));
-                assertEquals(day ? "card_sunny" : "card_night",
-                        FirmwareWeatherContract.widgetBackground(payload, false));
-                assertEquals(day ? "card_sunny_p" : "card_night_p",
-                        FirmwareWeatherContract.widgetBackground(payload, true));
-                // Stock English weather_id_0 is "Sunny" even when it renders the moon card.
+                assertEquals(day ? "card_sunny" : "card_night", FirmwareWeatherContract.widgetBackground(payload, false));
+                assertEquals(day ? "card_sunny_p" : "card_night_p", FirmwareWeatherContract.widgetBackground(payload, true));
                 assertEquals("Sunny", FirmwareWeatherContract.widgetLabel(payload));
             }
         } finally {
@@ -46,38 +36,40 @@ public class WeatherFirmwareContractTest {
         }
     }
 
-    @Test public void widgetIgnoresPayloadLabelAndDayFlagWhenChoosingNightArtwork() throws Exception {
-        JSONObject source = forecast();
-        source.getJSONObject("current").put("time", "2026-10-02T02:00")
-                .put("weather_code", 0).put("is_day", 0);
-        JSONObject payload = payload(source);
-        payload.getJSONObject("data").getJSONObject("condition")
-                .put("weathertext", "Clear night").put("isdaynight", true);
+    @Test public void refreshTimeAfterSunsetIsUsedEvenWhenForecastHourWasDaytime() throws Exception {
+        long now = java.time.Instant.parse("2026-10-12T15:40:00Z").toEpochMilli();
+        MetWeatherClient.Result result = MetFixtures.load(MetFixtures.forecast(now, "clearsky_day", 20), now, MetFixtures.ZONE);
+        JSONObject payload = new JSONObject(WeatherMapping.toBydJson(result, "City", "City"));
+        assertEquals("card_night", FirmwareWeatherContract.widgetBackground(payload, false));
+    }
+
+    @Test public void widgetIgnoresCustomTextAndDayFlagAndRetainsCloudyNightArtwork() throws Exception {
+        long now = java.time.Instant.parse("2026-10-11T23:00:00Z").toEpochMilli();
+        JSONObject payload = MetFixtures.payload(now, "clearsky_night");
+        payload.getJSONObject("data").getJSONObject("condition").put("weathertext", "Clear night").put("isdaynight", true);
         assertEquals("Sunny", FirmwareWeatherContract.widgetLabel(payload));
         assertEquals("card_night", FirmwareWeatherContract.widgetBackground(payload, false));
-
-        // A midnight anchor makes native binarySearch choose today's sunset at 02:00.
-        // Merely setting weathertext or isdaynight cannot repair that older payload shape.
-        JSONArray days = payload.getJSONObject("data").getJSONObject("dailys")
-                .getJSONArray("dailyweathers");
-        for (int i = 0; i < days.length(); i++) {
-            JSONObject day = days.getJSONObject(i);
-            day.put("publictime", LocalDateTime.parse(day.getString("publictimeFmt") + "T00:00")
-                    .atZone(ZoneId.of("Asia/Amman")).toInstant().toEpochMilli());
-        }
-        assertEquals("card_sunny", FirmwareWeatherContract.widgetBackground(payload, false));
+        JSONObject cloudy = MetFixtures.payload(now, "partlycloudy_night");
+        assertTrue(FirmwareWeatherContract.isDuringNight(cloudy));
+        assertEquals("Cloudy", FirmwareWeatherContract.widgetLabel(cloudy));
+        assertEquals(FirmwareWeatherContract.descriptors().getJSONObject("conditions")
+                .getJSONObject("1").getString("landscapeCard"), FirmwareWeatherContract.widgetBackground(cloudy, false));
     }
 
-    private static JSONObject forecast() throws Exception {
-        try (InputStream stream = WeatherFirmwareContractTest.class
-                .getResourceAsStream("/amman-open-meteo.json")) {
-            assertNotNull(stream);
-            return new JSONObject(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+    @Test public void polarDatesDoNotInventSolarEventsOrForceDayArtwork() throws Exception {
+        for (boolean polarDay : new boolean[]{true, false}) {
+            long now = MetFixtures.NOW;
+            JSONObject forecast = MetFixtures.forecast(now, "clearsky_polartwilight", -5);
+            MetWeatherClient.Result weather = new MetWeatherClient(url -> {
+                if (url.contains("/locationforecast/")) return forecast;
+                return MetFixtures.sun(LocalDate.parse(MetFixtures.parameter(url, "date")), ZoneId.of("UTC"), polarDay);
+            }).load(78, 15, "SJ", ZoneId.of("UTC"), now, ignored -> { });
+            JSONObject payload = new JSONObject(WeatherMapping.toBydJson(weather, "Arctic", "Arctic"));
+            assertTrue(WeatherMapping.isComplete(payload.toString()));
+            assertEquals(!polarDay, FirmwareWeatherContract.isDuringNight(payload));
+            JSONArray days = payload.getJSONObject("data").getJSONObject("dailys").getJSONArray("dailyweathers");
+            assertEquals("--", days.getJSONObject(1).getString("sunRiseFmt"));
+            assertEquals("--", days.getJSONObject(1).getString("sunSetFmt"));
         }
-    }
-
-    private static JSONObject payload(JSONObject source) throws Exception {
-        return new JSONObject(WeatherMapping.toBydJson(source, null,
-                "Amman", "Amman", 1_791_110_000_000L));
     }
 }

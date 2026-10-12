@@ -12,9 +12,7 @@ import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.os.Looper;
 import android.os.SystemClock;
-import java.io.InputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -139,10 +137,7 @@ public class WeatherRuntimeTest {
         preferences.edit().putBoolean(WeatherRuntime.PREF_ENABLED, true)
                 .putLong(WeatherRuntime.PREF_LAST_SUCCESS_MS, previousSuccess)
                 .putInt(WeatherRuntime.PREF_INTERVAL_MINUTES, 180).apply();
-        JSONObject forecast;
-        try (InputStream stream = getClass().getResourceAsStream("/amman-open-meteo.json")) {
-            forecast = new JSONObject(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
-        }
+        JSONObject forecast = MetFixtures.forecast(System.currentTimeMillis(), "cloudy", 18);
         List<String> requests = new CopyOnWriteArrayList<>();
         List<String> failures = new CopyOnWriteArrayList<>();
         java.util.concurrent.CountDownLatch oldDownloadStarted = new java.util.concurrent.CountDownLatch(1);
@@ -151,13 +146,13 @@ public class WeatherRuntimeTest {
             if (name.equals("weather_failure")) failures.add(String.valueOf(fields[1]));
         }, url -> {
             requests.add(url);
-            if (url.contains("latitude=10.000000")) {
+            if (url.contains("lat=10.0000")) {
                 oldDownloadStarted.countDown();
                 try { new java.util.concurrent.CountDownLatch(1).await(); }
                 catch (InterruptedException cancelled) { throw new IOException("cancelled old request", cancelled); }
             }
-            if (url.contains("air-quality")) throw new IOException("optional air quality unavailable");
-            return forecast;
+            if (url.contains("/airqualityforecast/")) throw new IOException("optional air quality unavailable");
+            return MetFixtures.response(url, forecast);
         });
         try {
             runtime.start();
@@ -200,9 +195,9 @@ public class WeatherRuntimeTest {
             assertTrue(runtime.lastSuccessMs() > previousSuccess);
             assertEquals("Wi-Fi", preferences.getString(WeatherRuntime.PREF_LAST_LOCATION_METHOD, ""));
             assertTrue(requests.size() >= 2);
-            assertTrue(requests.get(0).contains("latitude=10.000000&longitude=20.000000"));
+            assertTrue(requests.get(0).contains("lat=10.0000&lon=20.0000"));
             assertTrue(requests.subList(1, requests.size()).stream()
-                    .allMatch(url -> url.contains("latitude=31.953900&longitude=35.910600")));
+                    .allMatch(url -> (url.contains("lat=31.9539&lon=35.9106") || url.contains("lat=31.95&lon=35.91"))));
             assertTrue("Cancelled downloads must not replace the current update's status", failures.isEmpty());
             assertTrue(WeatherMapping.isComplete(provider.payload));
             assertTrue(shadowOf(location).getLocationUpdateListeners().isEmpty());
@@ -290,10 +285,7 @@ public class WeatherRuntimeTest {
                 .putLong(WeatherRuntime.PREF_LAST_SUCCESS_MS, previousNativeSuccess)
                 .putString("weather_widget_payload", "obsolete renderer cache")
                 .putLong("weather_last_fetch_ms", System.currentTimeMillis() + TimeUnit.HOURS.toMillis(3)).apply();
-        JSONObject forecast;
-        try (InputStream stream = getClass().getResourceAsStream("/amman-open-meteo.json")) {
-            forecast = new JSONObject(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
-        }
+        JSONObject forecast = MetFixtures.forecast(System.currentTimeMillis(), "cloudy", 18);
         AtomicReference<Long> scheduledDelay = new AtomicReference<>();
         AtomicReference<String> failure = new AtomicReference<>();
         AtomicReference<Boolean> result = new AtomicReference<>();
@@ -308,12 +300,12 @@ public class WeatherRuntimeTest {
             }
         }, url -> {
             requestedUrls.add(url);
-            if (!url.contains("open-meteo.com")) {
+            if (!url.contains("api.met.no")) {
                 throw new IllegalStateException("City names must come from the device Geocoder");
             }
-            if (url.contains("air-quality")) throw new IllegalStateException("optional AQ unavailable");
+            if (url.contains("/airqualityforecast/")) throw new IllegalStateException("optional AQ unavailable");
             if (forecastFailure != null) throw forecastFailure;
-            return forecast;
+            return MetFixtures.response(url, forecast);
         });
         try {
             runtime.start();
@@ -345,9 +337,9 @@ public class WeatherRuntimeTest {
             assertTrue(progress.contains("Downloading the weather forecast…"));
             assertFalse("The GPS fix must drive a weather request", requestedUrls.isEmpty());
             for (String url : requestedUrls) {
-                assertTrue(url, url.contains("latitude=31.953900&longitude=35.910600"));
-                assertTrue("HTTP requests must only fetch weather or air quality: " + url,
-                        url.contains("open-meteo.com"));
+                assertTrue(url, (url.contains("lat=31.9539&lon=35.9106") || url.contains("lat=31.95&lon=35.91")));
+                assertTrue("HTTP requests must only fetch MET data: " + url,
+                        url.contains("api.met.no"));
             }
             if (DeviceGeocoder.present) {
                 double[] query = DeviceGeocoder.lastQuery.get();
@@ -374,7 +366,7 @@ public class WeatherRuntimeTest {
                 assertEquals(expectedName, preferences.getString("weather_last_location_name", ""));
                 assertEquals(networkOnly ? "Wi-Fi" : "GPS",
                         preferences.getString(WeatherRuntime.PREF_LAST_LOCATION_METHOD, ""));
-                assertTrue(preferences.getString(WeatherRuntime.PREF_LAST_UPDATE_NOTICES, "").contains("Air quality unavailable"));
+                assertEquals("Unavailable", preferences.getString(WeatherRuntime.PREF_AIR_QUALITY, ""));
                 assertTrue(runtime.lastSuccessMs() > previousNativeSuccess);
                 assertEquals(runtime.lastSuccessMs(), preferences.getLong(WeatherRuntime.PREF_LAST_SUCCESS_MS, 0));
                 assertTrue(shadowOf(RuntimeEnvironment.getApplication()).getBroadcastIntents().stream()

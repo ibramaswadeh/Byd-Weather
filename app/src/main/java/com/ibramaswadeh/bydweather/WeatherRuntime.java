@@ -16,12 +16,7 @@ import android.provider.Settings;
 
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ScheduledExecutorService;
@@ -32,6 +27,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
+import java.util.function.LongSupplier;
 
 /** Fetches local weather and writes it to the BYD weather provider. */
 public final class WeatherRuntime {
@@ -41,6 +37,7 @@ public final class WeatherRuntime {
     static final String PREF_LAST_LOCATION_NAME = "weather_last_location_name";
     static final String PREF_LAST_LOCATION_METHOD = "weather_last_location_method";
     static final String PREF_LAST_UPDATE_NOTICES = "weather_last_update_notices";
+    static final String PREF_AIR_QUALITY = "weather_air_quality";
     static final String PREF_LOCATION_MODE = "weather_location_mode";
     public static final int DEFAULT_INTERVAL_MINUTES = 15;
     public static final int MIN_INTERVAL_MINUTES = 5;
@@ -50,9 +47,6 @@ public final class WeatherRuntime {
     public static final String WEATHER_URI =
             "content://com.byd.weatherdata.utils.WeatherContentProvider/weather";
     static final String PREF_LANGUAGE = "ui_language";
-    private static final long CONNECT_TIMEOUT_MS = 8_000L;
-    private static final long READ_TIMEOUT_MS = 12_000L;
-    private static final int MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
     enum PrerequisiteState {
         READY,
@@ -68,11 +62,8 @@ public final class WeatherRuntime {
         default void onProgress(String message) { }
     }
 
-    interface JsonFetcher {
-        JSONObject fetch(String url) throws Exception;
-    }
-
-    private final JsonFetcher jsonFetcher;
+    private final MetWeatherClient weatherClient;
+    private final LongSupplier clock;
     private final Context context;
     private final SharedPreferences preferences;
     private final BiConsumer<String, Object[]> eventSink;
@@ -128,12 +119,23 @@ public final class WeatherRuntime {
 
     public WeatherRuntime(Context context, SharedPreferences preferences,
             BiConsumer<String, Object[]> eventSink) {
-        this(context, preferences, eventSink, WeatherRuntime::getJson);
+        this(context, preferences, eventSink, new MetWeatherClient(context.getCacheDir()), System::currentTimeMillis);
     }
 
     WeatherRuntime(Context context, SharedPreferences preferences,
-            BiConsumer<String, Object[]> eventSink, JsonFetcher jsonFetcher) {
-        this.jsonFetcher = java.util.Objects.requireNonNull(jsonFetcher);
+            BiConsumer<String, Object[]> eventSink, MetWeatherClient.JsonSource source) {
+        this(context, preferences, eventSink, new MetWeatherClient(source), System::currentTimeMillis);
+    }
+
+    WeatherRuntime(Context context, SharedPreferences preferences,
+            BiConsumer<String, Object[]> eventSink, MetWeatherClient.JsonSource source, LongSupplier clock) {
+        this(context, preferences, eventSink, new MetWeatherClient(source), clock);
+    }
+
+    private WeatherRuntime(Context context, SharedPreferences preferences,
+            BiConsumer<String, Object[]> eventSink, MetWeatherClient weatherClient, LongSupplier clock) {
+        this.weatherClient = weatherClient;
+        this.clock = clock;
         if (context == null || preferences == null) throw new IllegalArgumentException("null runtime argument");
         Context application = context.getApplicationContext();
         this.context = application == null ? context : application;
@@ -155,7 +157,7 @@ public final class WeatherRuntime {
             if (!enabled) return;
             long dueAt = lastSuccessMs <= 0L ? 0L : lastSuccessMs
                     + TimeUnit.MINUTES.toMillis(intervalMinutes());
-            scheduleLocked(Math.max(0L, dueAt - System.currentTimeMillis()));
+            scheduleLocked(Math.max(0L, dueAt - clock.getAsLong()));
         }
     }
 
@@ -193,7 +195,7 @@ public final class WeatherRuntime {
             } else if (started || changed) {
                 long dueAt = lastSuccessMs <= 0L ? 0L : lastSuccessMs
                         + TimeUnit.MINUTES.toMillis(interval);
-                scheduleLocked(Math.max(0L, dueAt - System.currentTimeMillis()));
+                scheduleLocked(Math.max(0L, dueAt - clock.getAsLong()));
                 emit("weather_enabled", "interval_minutes", interval);
             }
         }
@@ -257,13 +259,17 @@ public final class WeatherRuntime {
     }
 
     public int intervalMinutes() {
-        return WeatherMapping.clampIntervalMinutes(preferences.getInt(
+        return clampIntervalMinutes(preferences.getInt(
                 PREF_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES));
     }
 
     static long delayAfterResultMs(boolean success, int intervalMinutes) {
         return TimeUnit.MINUTES.toMillis(success
-                ? WeatherMapping.clampIntervalMinutes(intervalMinutes) : RETRY_INTERVAL_MINUTES);
+                ? clampIntervalMinutes(intervalMinutes) : RETRY_INTERVAL_MINUTES);
+    }
+
+    static int clampIntervalMinutes(int minutes) {
+        return Math.max(MIN_INTERVAL_MINUTES, Math.min(MAX_INTERVAL_MINUTES, minutes));
     }
 
     private void runRequest(
@@ -274,28 +280,17 @@ public final class WeatherRuntime {
         try {
             emitCurrent(requestGeneration, "weather_request", "reason", reason);
             if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
-            String query = coordinateQuery(location);
             reportProgress(requestGeneration, "Looking up the city name…");
             City city = geocode(location);
-            reportProgress(requestGeneration, "Downloading the weather forecast…");
-            JSONObject forecast = jsonFetcher.fetch("https://api.open-meteo.com/v1/forecast?" + query
-                    + "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,uv_index"
-                    + "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day,relative_humidity_2m,cloud_cover,wind_gusts_10m"
-                    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,wind_speed_10m_max,wind_direction_10m_dominant,apparent_temperature_max,apparent_temperature_min,moonrise,moonset"
-                    + "&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm&timezone=auto&past_days=1&forecast_days=15");
-            JSONObject aqi = null;
+            MetWeatherClient.Result weather = weatherClient.load(location.getLatitude(),
+                    location.getLongitude(), city.countryCode, ZoneId.systemDefault(),
+                    clock.getAsLong(), message -> reportProgress(requestGeneration, message));
             String notices = city.notice;
-            try {
-                reportProgress(requestGeneration, "Downloading air quality…");
-                aqi = jsonFetcher.fetch("https://air-quality-api.open-meteo.com/v1/air-quality?" + query
-                        + "&current=european_aqi,pm10,pm2_5&hourly=european_aqi&past_days=1&forecast_days=5&timezone=auto");
-            } catch (Exception ignored) {
-                emitCurrent(requestGeneration, "weather_aqi_unavailable");
-                notices += (notices.isEmpty() ? "" : " ") + "Air quality unavailable.";
+            for (String notice : weather.notices) {
+                notices += (notices.isEmpty() ? "" : " ") + notice;
             }
             stage = WeatherErrors.Stage.RESPONSE;
-            String payload = WeatherMapping.toBydJson(forecast, aqi, city.localName,
-                    city.englishName, System.currentTimeMillis());
+            String payload = WeatherMapping.toBydJson(weather, city.localName, city.englishName);
             String locationName = new JSONObject(payload).getJSONObject("data")
                     .getJSONObject("city").getString("name");
             if (!WeatherMapping.isComplete(payload)) throw new IllegalStateException("incomplete BYD payload");
@@ -308,10 +303,13 @@ public final class WeatherRuntime {
             synchronized (stateLock) {
                 if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
                 success = true;
-                lastSuccessMs = System.currentTimeMillis();
+                lastSuccessMs = clock.getAsLong();
                 preferences.edit().putLong(PREF_LAST_SUCCESS_MS, lastSuccessMs)
                         .putString(PREF_LAST_LOCATION_NAME, locationName)
                         .putString(PREF_LAST_LOCATION_METHOD, locationMethod(location))
+                        .putString(PREF_AIR_QUALITY, weather.airQuality == null ? "Unavailable"
+                                : weather.airQuality.description() + " health risk · Norwegian index "
+                                        + weather.airQuality.formattedIndex())
                         .putString(PREF_LAST_UPDATE_NOTICES, notices).apply();
             }
             emitCurrent(requestGeneration, "weather_success", "last_success_ms", lastSuccessMs);
@@ -773,7 +771,7 @@ public final class WeatherRuntime {
                     Address address = addresses.get(0);
                     String city = firstNonEmpty(address.getLocality(), address.getSubAdminArea(),
                             address.getAdminArea());
-                    if (city != null) return new City(city, city, "");
+                    if (city != null) return new City(city, city, address.getCountryCode(), "");
                     failureReason = "no_usable_name";
                 } else {
                     failureReason = "no_result";
@@ -784,7 +782,7 @@ public final class WeatherRuntime {
         }
         emit("weather_geocoder_fallback", "ui_language", normalizedLanguage(language),
                 "latitude", latitude, "longitude", longitude, "reason", failureReason);
-        return new City(fallback, fallback, "City name unavailable; showing Current location.");
+        return new City(fallback, fallback, null, "City name unavailable; showing Current location.");
     }
 
     static String normalizedLanguage(String language) {
@@ -798,41 +796,6 @@ public final class WeatherRuntime {
     static String firstNonEmpty(String... values) {
         for (String value : values) if (value != null && !value.trim().isEmpty()) return value;
         return null;
-    }
-
-    private static JSONObject getJson(String url) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-        connection.setRequestMethod("GET");
-        connection.setConnectTimeout((int) CONNECT_TIMEOUT_MS);
-        connection.setReadTimeout((int) READ_TIMEOUT_MS);
-        connection.setRequestProperty("Accept", "application/json");
-        try {
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) throw new WeatherErrors.HttpFailure(status);
-            try (InputStream stream = connection.getInputStream()) {
-                return readJson(stream);
-            }
-        } finally {
-            connection.disconnect();
-        }
-    }
-
-    static JSONObject readJson(InputStream stream) throws Exception {
-        byte[] buffer = new byte[8192];
-        ByteArrayOutputStream body = new ByteArrayOutputStream();
-        int size = 0;
-        int count;
-        while ((count = stream.read(buffer)) != -1) {
-            if (count > MAX_RESPONSE_BYTES - size) throw new IllegalStateException("response too large");
-            body.write(buffer, 0, count);
-            size += count;
-        }
-        return new JSONObject(new String(body.toByteArray(), StandardCharsets.UTF_8));
-    }
-
-    private String coordinateQuery(Location location) throws Exception {
-        return "latitude=" + URLEncoder.encode(String.format(Locale.US, "%.6f", location.getLatitude()), "UTF-8")
-                + "&longitude=" + URLEncoder.encode(String.format(Locale.US, "%.6f", location.getLongitude()), "UTF-8");
     }
 
     private boolean isCurrent(long requestGeneration) {
@@ -915,10 +878,12 @@ public final class WeatherRuntime {
     private static final class City {
         final String localName;
         final String englishName;
+        final String countryCode;
         final String notice;
-        City(String localName, String englishName, String notice) {
+        City(String localName, String englishName, String countryCode, String notice) {
             this.localName = localName;
             this.englishName = englishName;
+            this.countryCode = countryCode;
             this.notice = notice;
         }
     }

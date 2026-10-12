@@ -167,6 +167,23 @@
         "id": "ev_20d82437802391b9aa9dfa05555be7f40e65ac6db600a658b96274a0b10a65ac",
         "operation": "inspect_android_class",
         "class": "com.byd.weatherdata.R.mipmap"
+      },
+      "conditionFieldTypes": {
+        "id": "ev_839b7f3a88b2b4619e063c362cd459d87093601b1616ac2d24ec373f84c5cddf",
+        "operation": "inspect_android_class",
+        "class": "com.byd.weatherlibrary.WeatherInfoBean.DataDTO.ConditionDTO"
+      },
+      "uvLabel": {
+        "id": "ev_c86c68859a5c624e68ad2ad381e5c5b51c22f7f6754d5751a7a4a535a308bf92",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.WeatherUtils",
+        "method": "transformUVLevel"
+      },
+      "hourlySolarInsertion": {
+        "id": "ev_3ea98ca255d336e3c4073845a23179f88e97456042021fdce062c995f41ce3a6",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.utils.NumberUtils",
+        "method": "insertInOrder"
       }
     },
     "recheck": {
