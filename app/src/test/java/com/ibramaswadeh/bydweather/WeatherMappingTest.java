@@ -73,7 +73,7 @@ public class WeatherMappingTest {
                 MetFixtures.ZONE), "City", "City"));
         JSONObject condition = payload.getJSONObject("data").getJSONObject("condition");
         assertEquals(16, condition.getInt("windspeed"));
-        assertEquals("3", condition.getString("windlevel"));
+        assertEquals(3, condition.getInt("windlevel"));
         assertEquals("SW", condition.getString("winddir"));
         assertEquals(-1, condition.getInt("visibility"));
         assertEquals(2, condition.getInt("uVIndex"));

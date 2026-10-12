@@ -48,6 +48,30 @@ import static org.robolectric.Shadows.shadowOf;
 public class WeatherWidgetRefreshTest {
     private static final Uri WEATHER_URI = Uri.parse(WeatherRuntime.WEATHER_URI);
 
+    @Test public void refreshReplacesUndecodablePayloadWithReadableForecasts() throws Exception {
+        try (RefreshFixture fixture = new RefreshFixture()) {
+            JSONObject stored = new JSONObject(payload(forecast("cloudy", 18)));
+            stored.getJSONObject("data").getJSONObject("condition").put("realfeel", 13.4);
+            fixture.provider.seed(stored.toString());
+            JSONObject source = forecast("cloudy", 18);
+            JSONObject first = source.getJSONObject("properties").getJSONArray("timeseries")
+                    .getJSONObject(0).getJSONObject("data");
+            first.getJSONObject("instant").getJSONObject("details")
+                    .put("apparent_air_temperature", 13.4).put("cloud_area_fraction", 87.5);
+            first.getJSONObject("next_1_hours").getJSONObject("details")
+                    .put("probability_of_precipitation", 62.8);
+            fixture.forecast.set(source);
+
+            fixture.refresh();
+
+            WeatherForecastScreenTest.NativeWeather weather =
+                    WeatherForecastScreenTest.assertForecastRowsDecode(nativeWeatherJson(fixture.context));
+            assertEquals(Integer.valueOf(13), weather.data.condition.realfeel);
+            assertEquals(Integer.valueOf(88), weather.data.condition.cloudCover);
+            assertEquals(Integer.valueOf(63), weather.data.hourlys.hourlyweathers.get(0).rainprobability);
+        }
+    }
+
     @Test public void nativeFirstRowReflectsBothSuccessfulRefreshesWhenProviderHasMultipleRows()
             throws Exception {
         try (RefreshFixture fixture = new RefreshFixture()) {

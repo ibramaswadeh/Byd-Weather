@@ -20,8 +20,10 @@ replacement widget payload. Cache storage failures do not block a valid download
 | `wind_speed`, `wind_from_direction` | m/s converted to km/h, Beaufort level, and eight-point compass direction. |
 | `relative_humidity`, `air_pressure_at_sea_level` | Percent and hPa. |
 | `ultraviolet_index_clear_sky` | Rounded clear-sky UV; `-1` when unavailable. |
-| `apparent_air_temperature`, `wind_speed_of_gust` | Optional feels-like temperature and gust speed. |
-| `probability_of_precipitation` | Optional hourly probability from the selected forecast period. |
+| `apparent_air_temperature`, `wind_speed_of_gust` | Optional rounded feels-like temperature and gust speed. |
+| `cloud_area_fraction` | Optional rounded current cloud-cover percentage. |
+| `probability_of_precipitation` | Optional rounded hourly probability from the selected forecast period. |
+| `precipitation_amount` | Optional fractional precipitation amount. |
 | Sunrise `sunrise.time`, `sunset.time` | Epoch event times; offsets are parsed, not stripped. |
 | Airqualityforecast `AQI` | Norwegian health-risk index displayed in this app, not converted to a Chinese AQI label. |
 
@@ -53,6 +55,17 @@ with day, night, and polar-twilight suffixes against the independent
 [REA-derived factory contract](../app/src/test/resources/byd-weatherdata-2.9.5-contract.json).
 
 ## Factory timing and unavailable fields
+
+WeatherData deserializes the entire response with Gson before opening either
+forecast list. Current `realfeel` and `cloudCover`, and hourly `rainprobability`,
+are `Integer` fields. Sending a fraction in any one causes deserialization to
+fail; the query returns empty data and both forecast fragments hide their lists.
+Round these values at the native serialization boundary, keep absent optional
+readings absent, and retain fractions for `precipitation`, whose native type is
+`Float`. Validate required and optional integer readings before writing the
+provider. Gson contract tests use independently inspected native field types and
+check the fields dereferenced by both forecast adapters, including real global
+and Nordic MET responses.
 
 The native daily adapter reads array positions 2–8. Position 0 supplies only
 yesterday's solar timing, position 1 is today, and positions 2–8 are the forecast.

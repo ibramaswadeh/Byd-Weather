@@ -39,8 +39,8 @@ final class WeatherMapping {
                 .put("forecastTime", current.time).put("forecastUpdatedAt", weather.forecast.updatedAt)
                 .put("expiretime", now + 3 * 60 * 60 * 1000L)
                 .put("desc", ATTRIBUTION).put("mobilelink", SOURCE_URL);
-        putIfPresent(condition, "realfeel", current.feelsLike);
-        putIfPresent(condition, "cloudCover", current.cloudCover);
+        putRoundedIfPresent(condition, "realfeel", current.feelsLike);
+        putRoundedIfPresent(condition, "cloudCover", current.cloudCover);
         putIfPresent(condition, "precipitation", current.precipitation);
 
         JSONArray hourlyItems = new JSONArray();
@@ -50,7 +50,7 @@ final class WeatherMapping {
                     .put("temp", Math.round(point.temperature))
                     .put("wd", windDirection(point.windDirection)).put("wp", windLevel(point.windSpeed))
                     .put("isdaynight", day).put("Isdaynight", day);
-            putIfPresent(hour, "rainprobability", point.rainProbability);
+            putRoundedIfPresent(hour, "rainprobability", point.rainProbability);
             hourlyItems.put(hour);
         }
 
@@ -133,7 +133,9 @@ final class WeatherMapping {
             if (data.getJSONObject("city").getString("name").trim().isEmpty()) return false;
             JSONObject current = data.getJSONObject("condition");
             if (!validCondition(current)) return false;
-            requireNumbers(current, "temperature", "humidity", "pressure", "visibility", "uVIndex", "updatetime");
+            requireIntegers(current, "temperature", "humidity", "pressure", "visibility", "uVIndex");
+            requireOptionalIntegers(current, "realfeel", "cloudCover", "feelTemperatureShade");
+            requireNumbers(current, "updatetime");
             current.getBoolean("isdaynight");
             JSONArray hours = data.getJSONObject("hourlys").getJSONArray("hourlyweathers");
             JSONArray days = data.getJSONObject("dailys").getJSONArray("dailyweathers");
@@ -141,7 +143,9 @@ final class WeatherMapping {
             long previous = Long.MIN_VALUE;
             for (int i = 0; i < hours.length(); i++) {
                 JSONObject hour = hours.getJSONObject(i);
-                requireNumbers(hour, "temp", "date");
+                requireIntegers(hour, "temp", "wp");
+                requireOptionalIntegers(hour, "rainprobability");
+                requireNumbers(hour, "date");
                 if (!validCondition(hour) || hour.getLong("date") <= previous
                         || hour.getBoolean("isdaynight") != hour.getBoolean("Isdaynight")) return false;
                 previous = hour.getLong("date");
@@ -152,8 +156,9 @@ final class WeatherMapping {
                 requireNumbers(day, "publictime", "sunRise", "sunSet");
                 if (day.getLong("publictime") <= previous) return false;
                 previous = day.getLong("publictime");
+                requireOptionalIntegers(day, "mintemp", "maxtemp", "lv", "aqivalue");
                 if (i == 0 && day.optBoolean("timingOnly")) continue;
-                requireNumbers(day, "mintemp", "maxtemp", "lv");
+                requireIntegers(day, "mintemp", "maxtemp", "lv");
                 if (day.getDouble("mintemp") > day.getDouble("maxtemp")
                         || !validCondition(day.getJSONObject("conditionDay"))
                         || !validCondition(day.getJSONObject("conditionNight"))) return false;
@@ -166,7 +171,9 @@ final class WeatherMapping {
     }
 
     private static boolean validCondition(JSONObject condition) throws JSONException {
-        requireNumbers(condition, "cnweatherid", "weatherid", "zmweatherid");
+        requireIntegers(condition, "cnweatherid", "weatherid", "zmweatherid");
+        requireOptionalIntegers(condition, "humidity", "windspeed", "windlevel", "winddegrees",
+                "windgustspeed", "windgustlevel");
         int code = condition.getInt("cnweatherid");
         return ((code >= 0 && code <= 31) || code == 53)
                 && code == condition.getInt("weatherid") && code == condition.getInt("zmweatherid");
@@ -178,6 +185,21 @@ final class WeatherMapping {
             if (!(value instanceof Number) || !Double.isFinite(((Number) value).doubleValue())) {
                 throw new JSONException("Invalid widget number");
             }
+        }
+    }
+
+    // A fractional or out-of-range Integer makes the factory discard the entire response.
+    private static void requireIntegers(JSONObject object, String... keys) throws JSONException {
+        requireNumbers(object, keys);
+        for (String key : keys) {
+            double value = object.getDouble(key);
+            if (value != (int) value) throw new JSONException("Invalid widget integer: " + key);
+        }
+    }
+
+    private static void requireOptionalIntegers(JSONObject object, String... keys) throws JSONException {
+        for (String key : keys) {
+            if (!object.isNull(key)) requireIntegers(object, key);
         }
     }
 
@@ -199,11 +221,11 @@ final class WeatherMapping {
         return new String[]{"N", "NE", "E", "SE", "S", "SW", "W", "NW"}[(int) Math.round(degrees / 45) % 8];
     }
 
-    private static String windLevel(double speed) {
+    private static int windLevel(double speed) {
         double[] thresholds = {0.3, 1.6, 3.4, 5.5, 8, 10.8, 13.9, 17.2, 20.8, 24.5, 28.5, 32.7};
         int level = 0;
         while (level < thresholds.length && speed >= thresholds[level]) level++;
-        return String.valueOf(level);
+        return level;
     }
 
     private static int rounded(Double value) {
@@ -212,6 +234,10 @@ final class WeatherMapping {
 
     private static void putIfPresent(JSONObject object, String key, Double value) throws JSONException {
         if (value != null) object.put(key, value);
+    }
+
+    private static void putRoundedIfPresent(JSONObject object, String key, Double value) throws JSONException {
+        if (value != null) object.put(key, Math.round(value));
     }
 
     private static String nonEmpty(String value, String fallback) {

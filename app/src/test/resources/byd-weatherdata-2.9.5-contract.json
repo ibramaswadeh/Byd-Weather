@@ -184,6 +184,64 @@
         "operation": "inspect_android_method",
         "class": "com.byd.weatherdata.utils.NumberUtils",
         "method": "insertInOrder"
+      },
+      "hourlyFieldTypes": {
+        "id": "ev_caa3cd65feb2dd4e4c2250d27e779d0cf2717414514217de639685ee894ccd00",
+        "operation": "inspect_android_class",
+        "class": "com.byd.weatherlibrary.WeatherInfoBean.DataDTO.HourlysDTO.HourlyweathersDTO"
+      },
+      "dailyFieldTypes": {
+        "id": "ev_95295ceba0c9671b38ab8ae9c5391c0e85d9c9df58b2f5733b70332dd0bb0874",
+        "operation": "inspect_android_class",
+        "class": "com.byd.weatherlibrary.WeatherInfoBean.DataDTO.DailysDTO.DailyweathersDTO"
+      },
+      "dailyVisibility": {
+        "id": "ev_a9c7dc3806a1bdb10620c93907328431f0fd937eb4df74ea772ab4fa9f69ad4f",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.fragment.DayWeatherFragment",
+        "method": "checkData"
+      },
+      "hourlyVisibility": {
+        "id": "ev_3d8331d46f2a5039c09e41bc22e5be273dc20a44a80a214fd45c1809a494bd94",
+        "operation": "inspect_android_method",
+        "class": "com.byd.weatherdata.fragment.HourWeatherFragment",
+        "method": "checkData"
+      },
+      "integerDecoder": {
+        "id": "ev_98e9b43eca2c90c9d09b0b728d4723a899f9e576ae5d01fffa1cb1696ec6230d",
+        "operation": "inspect_android_method",
+        "class": "com.google.gson.stream.JsonReader",
+        "method": "nextInt"
+      },
+      "dayConditionFieldTypes": {
+        "id": "ev_5182d2a047e1894eaf21ee46982f2e9095b0dcd2ec6a578e39bbdb0dab6ac88e",
+        "operation": "inspect_android_class",
+        "class": "com.byd.weatherlibrary.WeatherInfoBean.DataDTO.DailysDTO.DailyweathersDTO.ConditionDayDTO"
+      },
+      "nightConditionFieldTypes": {
+        "id": "ev_6003eecc7e6a72fd840bc8499711f88d417b0072555a1095011bb9745a5b82f9",
+        "operation": "inspect_android_class",
+        "class": "com.byd.weatherlibrary.WeatherInfoBean.DataDTO.DailysDTO.DailyweathersDTO.ConditionNightDTO"
+      },
+      "responseFieldTypes": {
+        "id": "ev_a2d9eeeb42f903d0ec7fbfdd03e0e302120aaef69036ea95f0b95523cd08381e",
+        "operation": "inspect_android_class",
+        "class": "com.byd.weatherlibrary.WeatherInfoBean"
+      },
+      "cityFieldTypes": {
+        "id": "ev_4b6a4b01d04a4115113c5ff34e589f97aef05e4b7b4f8b587a6f8ffd71f7152a",
+        "operation": "inspect_android_class",
+        "class": "com.byd.weatherlibrary.WeatherInfoBean.DataDTO.CityDTO"
+      },
+      "dailyContainerFieldTypes": {
+        "id": "ev_94c624883e409de6e691e9826d2f0bf84b87052a0cd9740b405cf87b9e379136",
+        "operation": "inspect_android_class",
+        "class": "com.byd.weatherlibrary.WeatherInfoBean.DataDTO.DailysDTO"
+      },
+      "hourlyContainerFieldTypes": {
+        "id": "ev_ef114a145d6cec879f7241606be226f72b64ed8d5b8abe812865af6ff1cb0d84",
+        "operation": "inspect_android_class",
+        "class": "com.byd.weatherlibrary.WeatherInfoBean.DataDTO.HourlysDTO"
       }
     },
     "recheck": {
