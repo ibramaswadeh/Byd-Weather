@@ -20,6 +20,7 @@ public final class WeatherService extends Service {
     static final String ACTION_STOP = "com.ibramaswadeh.bydweather.STOP";
     static final String EXTRA_RECEIVER = "receiver";
     static final String KEY_STATUS = "weather_status";
+    static final int RESULT_PROGRESS = 2;
     static final String PREF_AUTO_START = "auto_start_enabled";
     private static final String CHANNEL = "byd_weather_service";
     private static final int NOTIFICATION_ID = 17;
@@ -66,17 +67,25 @@ public final class WeatherService extends Service {
         if (ACTION_REFRESH.equals(action)) {
             ResultReceiver receiver = intent.getParcelableExtra(EXTRA_RECEIVER);
             boolean accepted = runtime.requestNow(receiver == null ? "oem_button" : "app_button",
-                    (success, error) -> {
-                        if (receiver == null) return;
-                        Bundle result = new Bundle();
-                        result.putString("message", success ? "Weather updated" :
-                                "Weather update failed: " + error);
-                        receiver.send(success ? 0 : 1, result);
+                    new WeatherRuntime.ResultCallback() {
+                        @Override public void onProgress(String message) {
+                            if (receiver == null) return;
+                            Bundle result = new Bundle();
+                            result.putString("message", message);
+                            receiver.send(RESULT_PROGRESS, result);
+                        }
+                        @Override public void onResult(boolean success, String error) {
+                            if (receiver == null) return;
+                            Bundle result = new Bundle();
+                            result.putString("message", success ? successStatus() : error);
+                            receiver.send(success ? 0 : 1, result);
+                        }
                     });
             if (!accepted && receiver != null) {
                 Bundle result = new Bundle();
                 result.putString("message", runtime.isRequestInFlight() ?
-                        "Weather update is already running" : "Weather service is off");
+                        "Update already in progress. " + preferences.getString(KEY_STATUS, "Waiting for location or internet.")
+                        : "Weather updates are off. Enable Keep weather updated first.");
                 receiver.send(1, result);
             }
         }
@@ -85,22 +94,29 @@ public final class WeatherService extends Service {
 
     private void weatherEvent(String name, Object[] fields) {
         String status = null;
-        if ("weather_success".equals(name)) status = "Stock widget updated successfully";
+        if ("weather_success".equals(name)) status = successStatus();
+        else if ("weather_progress".equals(name)) status = String.valueOf(fields[1]);
         else if ("weather_request".equals(name)) status = "Updating weather";
         else if ("weather_prerequisite_wait".equals(name)) {
-            status = "Waiting for GPS location and/or validated internet";
+            status = "Waiting for location or internet";
         } else if ("weather_authorization_required".equals(name)) {
-            status = "Precise GPS permission is required";
-        } else if ("weather_gps_unavailable".equals(name)) {
-            status = "GPS unavailable; keeping last weather, retrying in 5 minutes";
+            status = "Location permission denied. Allow location access in app settings.";
+        } else if ("weather_location_unavailable".equals(name)) {
+            status = String.valueOf(fields[1]) + " Previous weather kept; retrying in 5 minutes.";
         } else if ("weather_failure".equals(name)) {
             Object reason = fields.length >= 2 ? fields[1] : "unknown error";
-            status = "Update failed: " + reason;
+            status = String.valueOf(reason);
         }
         if (status == null) return;
         preferences.edit().putString(KEY_STATUS, status).apply();
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(NOTIFICATION_ID, notification(status));
+    }
+
+    private String successStatus() {
+        String method = preferences.getString(WeatherRuntime.PREF_LAST_LOCATION_METHOD, "GPS");
+        String notices = preferences.getString(WeatherRuntime.PREF_LAST_UPDATE_NOTICES, "");
+        return "Weather updated using " + method + "." + (notices.isEmpty() ? "" : " " + notices);
     }
 
     private Notification notification(String message) {

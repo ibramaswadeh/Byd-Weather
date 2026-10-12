@@ -27,6 +27,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.Toast;
 
 import java.text.DateFormat;
@@ -128,6 +130,41 @@ public final class MainActivity extends Activity {
         root.addView(locationButton);
 
         addSpace(root, 14);
+        root.addView(label("Location method", 17, TEXT));
+        RadioGroup locationModes = new RadioGroup(this);
+        locationModes.setOrientation(RadioGroup.VERTICAL);
+        RadioButton automatic = new RadioButton(this);
+        automatic.setId(View.generateViewId());
+        automatic.setText("Automatic: GPS with Wi-Fi/cell fallback");
+        automatic.setTextColor(TEXT);
+        automatic.setTextSize(16);
+        automatic.setMinHeight(dp(48));
+        locationModes.addView(automatic);
+        RadioButton networkOnly = new RadioButton(this);
+        networkOnly.setId(View.generateViewId());
+        networkOnly.setText("Wi-Fi/cell only");
+        networkOnly.setTextColor(TEXT);
+        networkOnly.setTextSize(16);
+        networkOnly.setMinHeight(dp(48));
+        locationModes.addView(networkOnly);
+        WeatherLocationSource.Mode mode = WeatherLocationSource.Mode.fromPreference(
+                preferences.getString(WeatherRuntime.PREF_LOCATION_MODE, "automatic"));
+        locationModes.check(mode == WeatherLocationSource.Mode.NETWORK_ONLY
+                ? networkOnly.getId() : automatic.getId());
+        root.addView(locationModes);
+        TextView locationHint = label(locationHint(mode), 14, MUTED);
+        root.addView(locationHint);
+        locationModes.setOnCheckedChangeListener((group, checkedId) -> {
+            WeatherLocationSource.Mode selected = checkedId == networkOnly.getId()
+                    ? WeatherLocationSource.Mode.NETWORK_ONLY : WeatherLocationSource.Mode.AUTOMATIC;
+            preferences.edit().putString(WeatherRuntime.PREF_LOCATION_MODE, selected.preference).apply();
+            locationHint.setText(locationHint(selected));
+            if (weatherSwitch.isChecked()) {
+                WeatherService.command(this, WeatherService.ACTION_SETTINGS_CHANGED);
+            }
+        });
+
+        addSpace(root, 14);
         LinearLayout intervalRow = new LinearLayout(this);
         intervalRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView intervalLabel = label("Refresh interval (5–180 min)", 17, TEXT);
@@ -157,6 +194,8 @@ public final class MainActivity extends Activity {
         refreshButton.setOnClickListener(v -> manualRefresh());
         root.addView(refreshButton);
         statusText = label("", 16, TEXT);
+        statusText.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        statusText.setTextIsSelectable(true);
         statusText.setPadding(0, dp(12), 0, dp(12));
         root.addView(statusText);
 
@@ -225,10 +264,14 @@ public final class MainActivity extends Activity {
                     @Override protected void onReceiveResult(int resultCode, Bundle data) {
                         String message = data == null ? "Update failed" :
                                 data.getString("message", "Update failed");
+                        if (resultCode == WeatherService.RESULT_PROGRESS) {
+                            setStatusMessage(message);
+                            return;
+                        }
                         Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
                         manualRefreshing = false;
                         refreshButton.setEnabled(weatherSwitch.isChecked());
-                        updateStatus();
+                        setStatusMessage(message);
                     }
                 });
     }
@@ -269,8 +312,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean hasLocation() {
-        return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED;
+        return WeatherLocationSource.hasLocationPermission(this);
     }
 
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] grants) {
@@ -285,7 +327,7 @@ public final class MainActivity extends Activity {
                 if (!permissionPrompt) promptForBydStartupIfNeeded();
             } else {
                 weatherSwitch.setChecked(false);
-                Toast.makeText(this, "Precise location is required for GPS weather", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Location permission is required. Allow location access in app settings.", Toast.LENGTH_LONG).show();
             }
         } else if (code == REQUEST_BACKGROUND_LOCATION) {
             if (Build.VERSION.SDK_INT >= 29
@@ -358,16 +400,34 @@ public final class MainActivity extends Activity {
         String state = enabled ? preferences.getString(WeatherService.KEY_STATUS,
                 "Waiting for first update") : "Weather updates are off";
         String writtenLocation = preferences.getString(WeatherRuntime.PREF_LAST_LOCATION_NAME, "");
-        statusText.setText(state + "\n" + stamp
-                + (writtenLocation.isEmpty() ? "" : "\nLocation: " + writtenLocation));
+        if (!manualRefreshing) {
+            String method = preferences.getString(WeatherRuntime.PREF_LAST_LOCATION_METHOD, "");
+            String text = state + "\n" + stamp
+                    + (writtenLocation.isEmpty() ? "" : "\nLocation: " + writtenLocation)
+                    + (method.isEmpty() ? "" : "\nLocation source: " + method);
+            if (!text.contentEquals(statusText.getText())) statusText.setText(text);
+        }
         if (permissionText != null) {
-            String location = hasLocation() ? "Precise GPS granted" : "Precise location permission needed";
+            String location = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED ? "Precise location granted"
+                    : hasLocation() ? "Approximate location granted"
+                    : "Location permission needed";
             String background = Build.VERSION.SDK_INT < 29 ||
                     checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                             == PackageManager.PERMISSION_GRANTED
                     ? "background location granted" : "background location needed after reboot";
             permissionText.setText(location + " · " + background);
         }
+    }
+
+    private void setStatusMessage(String message) {
+        if (!message.contentEquals(statusText.getText())) statusText.setText(message);
+    }
+
+    private static String locationHint(WeatherLocationSource.Mode mode) {
+        return mode == WeatherLocationSource.Mode.NETWORK_ONLY
+                ? "Use this when GPS is unreliable. Availability depends on the car's Wi-Fi/cell location service."
+                : "If GPS has no fix after 10 seconds, the app tries Wi-Fi/cell location.";
     }
 
     private Button button(String label) {

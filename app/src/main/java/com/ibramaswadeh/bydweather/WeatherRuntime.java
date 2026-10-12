@@ -1,6 +1,5 @@
 package com.ibramaswadeh.bydweather;
 
-import android.Manifest;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
@@ -9,7 +8,6 @@ import android.database.Cursor;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
-import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -41,6 +39,9 @@ public final class WeatherRuntime {
     public static final String PREF_INTERVAL_MINUTES = "weather_interval_minutes";
     public static final String PREF_LAST_SUCCESS_MS = "weather_last_success_ms";
     static final String PREF_LAST_LOCATION_NAME = "weather_last_location_name";
+    static final String PREF_LAST_LOCATION_METHOD = "weather_last_location_method";
+    static final String PREF_LAST_UPDATE_NOTICES = "weather_last_update_notices";
+    static final String PREF_LOCATION_MODE = "weather_location_mode";
     public static final int DEFAULT_INTERVAL_MINUTES = 15;
     public static final int MIN_INTERVAL_MINUTES = 5;
     public static final int MAX_INTERVAL_MINUTES = 180;
@@ -64,6 +65,7 @@ public final class WeatherRuntime {
     /** Success means the stock provider write and readback were verified. */
     public interface ResultCallback {
         void onResult(boolean success, String error);
+        default void onProgress(String message) { }
     }
 
     interface JsonFetcher {
@@ -98,7 +100,8 @@ public final class WeatherRuntime {
     private Location callbackLocation;
     private long locationExpiresAtElapsedMs;
     private long locationRetryAtElapsedMs;
-    private final CarplayLocationSource locationSource;
+    private final WeatherLocationSource locationSource;
+    private WeatherLocationSource.Mode locationMode;
     private ConnectivityManager waitingConnectivityManager;
     private boolean locationCallbackRegistered;
     private boolean networkCallbackRegistered;
@@ -135,7 +138,8 @@ public final class WeatherRuntime {
         Context application = context.getApplicationContext();
         this.context = application == null ? context : application;
         this.preferences = preferences;
-        this.locationSource = new CarplayLocationSource(this.context);
+        this.locationSource = new WeatherLocationSource(this.context);
+        this.locationMode = selectedLocationMode();
         this.eventSink = eventSink;
         this.lastSuccessMs = preferences.getLong(PREF_LAST_SUCCESS_MS, 0L);
         // Discard only obsolete state from the removed owned forecast renderer.
@@ -158,11 +162,14 @@ public final class WeatherRuntime {
     /** Applies refresh settings and stops pending updates when disabled. */
     public void settingsChanged() {
         boolean nowEnabled = preferences.getBoolean(PREF_ENABLED, false);
+        WeatherLocationSource.Mode nowLocationMode = selectedLocationMode();
         boolean unregister = false;
         ResultCallback cancelledCallback = null;
         synchronized (stateLock) {
             int interval = intervalMinutes();
             boolean changed = enabled != nowEnabled;
+            boolean modeChanged = locationMode != nowLocationMode;
+            locationMode = nowLocationMode;
             enabled = nowEnabled;
             cancelScheduledLocked();
             if (!nowEnabled) {
@@ -173,6 +180,14 @@ public final class WeatherRuntime {
                 cancelActiveLocked();
                 unregister = true;
                 emit("weather_disabled", "reason", "settings");
+            } else if (modeChanged) {
+                cancelledCallback = requestPending ? pendingCallback : activeCallback;
+                activeCallback = null;
+                generation++;
+                clearPendingLocked();
+                cancelActiveLocked();
+                unregisterPrerequisiteCallbacksLocked();
+                scheduleLocked(0L);
             } else if (requestPending) {
                 schedulePrerequisiteRecheckLocked();
             } else if (started || changed) {
@@ -183,7 +198,8 @@ public final class WeatherRuntime {
             }
         }
         if (unregister) unregisterPrerequisiteCallbacks();
-        deliver(cancelledCallback, false, "weather disabled");
+        deliver(cancelledCallback, false, nowEnabled
+                ? "Location method changed. Starting a new update." : "Weather updates are off.");
     }
 
     public boolean requestNow(String reason) {
@@ -254,29 +270,38 @@ public final class WeatherRuntime {
             long requestGeneration, String reason, ResultCallback callback, Location location) {
         boolean success = false;
         String error = "";
+        WeatherErrors.Stage stage = WeatherErrors.Stage.FORECAST;
         try {
-            emit("weather_request", "reason", reason);
+            emitCurrent(requestGeneration, "weather_request", "reason", reason);
             if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
             String query = coordinateQuery(location);
+            reportProgress(requestGeneration, "Looking up the city name…");
             City city = geocode(location);
+            reportProgress(requestGeneration, "Downloading the weather forecast…");
             JSONObject forecast = jsonFetcher.fetch("https://api.open-meteo.com/v1/forecast?" + query
                     + "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,uv_index"
                     + "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day,relative_humidity_2m,cloud_cover,wind_gusts_10m"
                     + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,wind_speed_10m_max,wind_direction_10m_dominant,apparent_temperature_max,apparent_temperature_min,moonrise,moonset"
                     + "&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm&timezone=auto&past_days=1&forecast_days=15");
             JSONObject aqi = null;
+            String notices = city.notice;
             try {
+                reportProgress(requestGeneration, "Downloading air quality…");
                 aqi = jsonFetcher.fetch("https://air-quality-api.open-meteo.com/v1/air-quality?" + query
                         + "&current=european_aqi,pm10,pm2_5&hourly=european_aqi&past_days=1&forecast_days=5&timezone=auto");
             } catch (Exception ignored) {
-                emit("weather_aqi_unavailable");
+                emitCurrent(requestGeneration, "weather_aqi_unavailable");
+                notices += (notices.isEmpty() ? "" : " ") + "Air quality unavailable.";
             }
+            stage = WeatherErrors.Stage.RESPONSE;
             String payload = WeatherMapping.toBydJson(forecast, aqi, city.localName,
                     city.englishName, System.currentTimeMillis());
             String locationName = new JSONObject(payload).getJSONObject("data")
                     .getJSONObject("city").getString("name");
             if (!WeatherMapping.isComplete(payload)) throw new IllegalStateException("incomplete BYD payload");
             if (!isCurrent(requestGeneration)) throw new InterruptedException("weather disabled");
+            stage = WeatherErrors.Stage.WIDGET;
+            reportProgress(requestGeneration, "Updating the BYD weather widget…");
             if (!writeProvider(payload, requestGeneration)) {
                 throw new IllegalStateException("Stock widget provider write/readback failed");
             }
@@ -285,15 +310,17 @@ public final class WeatherRuntime {
                 success = true;
                 lastSuccessMs = System.currentTimeMillis();
                 preferences.edit().putLong(PREF_LAST_SUCCESS_MS, lastSuccessMs)
-                        .putString(PREF_LAST_LOCATION_NAME, locationName).apply();
+                        .putString(PREF_LAST_LOCATION_NAME, locationName)
+                        .putString(PREF_LAST_LOCATION_METHOD, locationMethod(location))
+                        .putString(PREF_LAST_UPDATE_NOTICES, notices).apply();
             }
-            emit("weather_success", "last_success_ms", lastSuccessMs);
+            emitCurrent(requestGeneration, "weather_success", "last_success_ms", lastSuccessMs);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             error = "cancelled";
         } catch (Throwable failure) {
-            error = summary(failure);
-            emit("weather_failure", "error", error);
+            error = WeatherErrors.describe(stage, failure);
+            emitCurrent(requestGeneration, "weather_failure", "error", error);
         } finally {
             boolean networkValidated = hasValidatedDefaultNetwork();
             boolean deliverCallback;
@@ -501,6 +528,13 @@ public final class WeatherRuntime {
                 if (transition) {
                     emit("weather_prerequisite_wait", "missing", waitLabel(state));
                 }
+                if (state == PrerequisiteState.WAIT_NETWORK || state == PrerequisiteState.WAIT_BOTH) {
+                    String message = internetWaitMessage();
+                    reportProgress(requestGeneration, message);
+                    ResultCallback unavailable = pendingCallback;
+                    pendingCallback = null;
+                    deliver(unavailable, false, message);
+                }
                 if (prerequisiteRecheckRequested) {
                     prerequisiteRecheckRequested = false;
                     queuePrerequisiteCheckLocked("callback");
@@ -527,7 +561,7 @@ public final class WeatherRuntime {
         }
         if (authorizationDenied) {
             emit("weather_authorization_required", "permission", "location");
-            deliver(callback, false, "SecurityException: location permission denied");
+            deliver(callback, false, "Location permission denied. Allow location access in app settings.");
         } else if (startRequest) {
             if (readinessRetry) {
                 emit("weather_prerequisite_ready", "trigger", trigger);
@@ -537,8 +571,7 @@ public final class WeatherRuntime {
     }
 
     private LocationSnapshot currentLocation() {
-        boolean authorized = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        boolean authorized = WeatherLocationSource.hasLocationPermission(context);
         if (!authorized) return new LocationSnapshot(false, null);
         synchronized (stateLock) {
             return new LocationSnapshot(true, callbackLocation != null
@@ -562,7 +595,7 @@ public final class WeatherRuntime {
     }
 
     private void updatePrerequisiteCallbacksLocked(PrerequisiteState state) {
-        // Start GPS only when the network is ready.
+        // Start location acquisition only when the internet connection is ready.
         boolean needLocation = state == PrerequisiteState.WAIT_LOCATION;
         boolean needNetwork = state == PrerequisiteState.WAIT_NETWORK
                 || state == PrerequisiteState.WAIT_BOTH;
@@ -576,16 +609,20 @@ public final class WeatherRuntime {
         if (locationCallbackRegistered || SystemClock.elapsedRealtime() < locationRetryAtElapsedMs) return;
         locationCallbackRegistered = true;
         long token = pendingGeneration;
-        locationSource.acquire(fix -> {
+        locationSource.acquire(locationMode, message -> reportProgress(token, message), fix -> {
             synchronized (stateLock) {
                 if (!started || !enabled || !requestPending || token != pendingGeneration
                         || !locationCallbackRegistered) return;
                 locationCallbackRegistered = false;
-                Location coordinates = new Location(LocationManager.GPS_PROVIDER);
+                Location coordinates = new Location(fix.provider);
                 coordinates.setLatitude(fix.latitude);
                 coordinates.setLongitude(fix.longitude);
+                if (Float.isFinite(fix.accuracy)) coordinates.setAccuracy(fix.accuracy);
+                android.os.Bundle extras = new android.os.Bundle();
+                extras.putString("weather_location_method", fix.sourceName);
+                coordinates.setExtras(extras);
                 locationExpiresAtElapsedMs = fix.expiresAtElapsedMs;
-                prerequisiteChanged("gps", coordinates);
+                prerequisiteChanged("location", coordinates);
             }
         }, error -> {
             ResultCallback callback;
@@ -600,9 +637,48 @@ public final class WeatherRuntime {
                 pendingCallback = null;
                 schedulePrerequisiteRecheckLocked();
             }
-            emit("weather_gps_unavailable", "error", error);
-            deliver(callback, false, error + "; keeping last weather, retrying in 5 minutes");
+            emit("weather_location_unavailable", "error", error);
+            deliver(callback, false, error + " Previous weather kept; retrying in 5 minutes.");
         });
+    }
+
+    private WeatherLocationSource.Mode selectedLocationMode() {
+        return WeatherLocationSource.Mode.fromPreference(preferences.getString(PREF_LOCATION_MODE, "automatic"));
+    }
+
+    private String internetWaitMessage() {
+        try {
+            ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkCapabilities capabilities = manager == null ? null
+                    : manager.getNetworkCapabilities(manager.getActiveNetwork());
+            if (capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                return "Internet check pending: Android has not confirmed access. Check Wi-Fi/mobile data or the connection's sign-in screen.";
+            }
+        } catch (SecurityException ignored) { }
+        return "No internet connection. Connect the car to Wi-Fi or mobile data; weather will retry when connected.";
+    }
+
+    private static String locationMethod(Location location) {
+        android.os.Bundle extras = location.getExtras();
+        return extras == null ? "GPS" : extras.getString("weather_location_method", "GPS");
+    }
+
+    private void reportProgress(long token, String message) {
+        synchronized (stateLock) {
+            if (!started || !enabled || generation != token) return;
+            ResultCallback callback = requestPending ? pendingCallback : activeCallback;
+            emit("weather_progress", "message", message);
+            if (callback != null) {
+                try { callback.onProgress(message); }
+                catch (Throwable ignored) { }
+            }
+        }
+    }
+
+    private void emitCurrent(long token, String name, Object... fields) {
+        synchronized (stateLock) {
+            if (started && enabled && generation == token) emit(name, fields);
+        }
     }
 
     private void registerNetworkCallbackLocked() {
@@ -697,7 +773,7 @@ public final class WeatherRuntime {
                     Address address = addresses.get(0);
                     String city = firstNonEmpty(address.getLocality(), address.getSubAdminArea(),
                             address.getAdminArea());
-                    if (city != null) return new City(city, city);
+                    if (city != null) return new City(city, city, "");
                     failureReason = "no_usable_name";
                 } else {
                     failureReason = "no_result";
@@ -708,7 +784,7 @@ public final class WeatherRuntime {
         }
         emit("weather_geocoder_fallback", "ui_language", normalizedLanguage(language),
                 "latitude", latitude, "longitude", longitude, "reason", failureReason);
-        return new City(fallback, fallback);
+        return new City(fallback, fallback, "City name unavailable; showing Current location.");
     }
 
     static String normalizedLanguage(String language) {
@@ -732,7 +808,7 @@ public final class WeatherRuntime {
         connection.setRequestProperty("Accept", "application/json");
         try {
             int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) throw new IllegalStateException("HTTP " + status);
+            if (status < 200 || status >= 300) throw new WeatherErrors.HttpFailure(status);
             try (InputStream stream = connection.getInputStream()) {
                 return readJson(stream);
             }
@@ -839,9 +915,11 @@ public final class WeatherRuntime {
     private static final class City {
         final String localName;
         final String englishName;
-        City(String localName, String englishName) {
+        final String notice;
+        City(String localName, String englishName, String notice) {
             this.localName = localName;
             this.englishName = englishName;
+            this.notice = notice;
         }
     }
 

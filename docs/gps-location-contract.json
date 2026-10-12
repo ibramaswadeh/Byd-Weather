@@ -1,26 +1,56 @@
 {
-  "schema_version": 1,
-  "implementation": "app/src/main/java/com/ibramaswadeh/bydweather/CarplayLocationSource.java",
+  "schema_version": 2,
+  "implementation": "app/src/main/java/com/ibramaswadeh/bydweather/WeatherLocationSource.java",
   "acquisition": {
-    "provider": "gps",
+    "modes": [
+      "automatic",
+      "network"
+    ],
+    "default_mode": "automatic",
+    "providers": [
+      "gps",
+      "network"
+    ],
     "minimum_interval_ms": 1000,
     "minimum_distance_m": 0,
     "nmea_optional": true,
-    "nmea_sentence_types": ["GGA", "RMC"],
+    "nmea_sentence_types": [
+      "GGA",
+      "RMC"
+    ],
     "timeout_ms": 60000,
-    "completion": "First valid GPS callback or NMEA fix completes one acquisition. Unavailable NMEA access does not block GPS updates."
+    "network_fallback_delay_ms": 10000,
+    "automatic": "Start GPS and optional NMEA. Start network location after ten seconds without a usable fix, or immediately when GPS or precise permission is unavailable.",
+    "network": "Request only NETWORK_PROVIDER; do not subscribe to GPS or NMEA.",
+    "completion": "The first usable requested-provider callback or validated NMEA fix completes one acquisition."
   },
   "validation": {
-    "maximum_fix_age_ms": 10000,
+    "gps_maximum_fix_age_ms": 10000,
+    "network_maximum_fix_age_ms": 60000,
+    "network_maximum_accuracy_meters": 25000,
     "future_tolerance_ms": 2000,
-    "gps": "Require the GPS provider, finite coordinates within latitude/longitude bounds, and a recent original elapsedRealtimeNanos timestamp.",
+    "gps": "Require the GPS provider, finite bounded coordinates, and a recent original elapsedRealtimeNanos timestamp.",
     "nmea": "Validate the checksum, fix status, coordinates, message timestamp, and original UTC fix time.",
-    "cached_locations_used": false,
-    "network_locations_used": false
+    "network": "Require the network provider, finite bounded coordinates, positive bounded accuracy, a recent provider timestamp, and no mock flag or reported satellite source.",
+    "radio_source_keys": [
+      "netType",
+      "networkLocationType"
+    ],
+    "unreported_radio_source": "Accept the Android network-provider callback and label it Network provider without claiming a Wi-Fi or cell source.",
+    "cached_locations_queried": false,
+    "provider_limit": "OEM services can rewrite timestamps or reuse coordinates; callback metadata alone cannot establish an independent fresh radio measurement."
   },
   "lifecycle": {
-    "listener_cleanup": ["completion", "failure", "cancellation", "replacement", "timeout", "GPS disabled"],
+    "listener_cleanup": [
+      "completion",
+      "failure",
+      "cancellation",
+      "replacement",
+      "timeout",
+      "provider disabled"
+    ],
     "late_callbacks": "Generation checks suppress callbacks from completed or cancelled acquisitions.",
+    "mode_change": "Cancel the previous acquisition or refresh generation and schedule an update using the selected mode.",
     "failure": "Keep the previous weather and retry after five minutes."
   }
 }

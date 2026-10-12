@@ -11,6 +11,8 @@ refresh controls.
 - Automatic updates every 15 minutes by default; adjustable from 5 to 180 minutes.
 - Optional startup with the car and a persistent status notification.
 - Manual updates from the app or, optionally, the stock widget's refresh button.
+- Automatic GPS with Wi-Fi/cell fallback, or a Wi-Fi/cell-only location option.
+- Update progress, specific failure messages, and the last successful location source.
 - Adaptive launcher icons and monochrome icons for Android 13+.
 
 ## Requirements
@@ -22,9 +24,10 @@ a particular car or firmware.
 The head unit must provide:
 
 - Access to the stock BYD WeatherData provider and widget.
-- GPS that delivers fresh location callbacks or NMEA messages to the app.
-- Precise location permission, plus background location permission for startup
-  where Android requires it.
+- GPS callbacks/NMEA, or a working Android Wi-Fi/cell location provider.
+- Location permission: precise access enables GPS; approximate access can use
+  Wi-Fi/cell. Background location permission is needed for startup where Android
+  requires it.
 - An internet connection that Android recognizes as usable.
 - Permission to start and run in the background through DiLink's app manager.
 
@@ -34,13 +37,16 @@ The app does not require root, ADB, or a weather API key.
 
 1. Install the APK and open **BYD Weather**. If another app updates the same
    widget, disable its weather updates first.
-2. Enable **Keep weather updated** and grant precise location permission.
+2. Enable **Keep weather updated** and grant location permission.
    Use **Grant background location** to allow location access all the time
    when Android offers that option.
 3. Enable **Start automatically with the car** if you want automatic startup.
    Open **Open BYD background-start settings** and allow startup and background
    operation in DiLink's app manager.
-4. Turn on GPS, connect to the internet, then tap **Update weather now**.
+4. Enable Android location, connect to the internet, and choose **Location method**:
+   **Automatic** prefers GPS and falls back to Wi-Fi/cell; **Wi-Fi/cell only**
+   requests the car's network-location provider without GPS/NMEA listeners.
+   Use Wi-Fi/cell only when GPS is unreliable. Tap **Update weather now**.
    Check the app's status and last successful update time, and confirm the
    stock widget changes.
 5. Set your preferred refresh interval.
@@ -52,23 +58,35 @@ The stock weather app can still perform its own refresh action.
 
 ## How updates work
 
-The service waits for usable internet, then collects a fresh GPS fix for up to
-60 seconds. It subscribes to Android GPS updates and NMEA messages. A fresh GPS
-callback or a valid GGA/RMC message can complete acquisition; unavailable NMEA
-access does not block GPS callbacks. Both listeners are released after
-acquisition finishes or stops.
+The service waits for usable internet, then requests a location for up to
+60 seconds. In Automatic mode, it first subscribes to Android GPS updates and
+optional NMEA messages. If GPS has no fix after ten seconds, it also requests
+`LocationManager.NETWORK_PROVIDER`. If GPS is off or precise permission is not
+granted, the network request starts immediately. Wi-Fi/cell-only mode requests
+only the network provider. The first usable fix completes the lookup; all
+listeners and fallback timers are then released.
 
-Fixes must be no more than ten seconds old. GPS callbacks use their original
-monotonic fix time, and NMEA messages require a valid checksum, fix status, and
-UTC fix time. Last-known locations and network-based coordinates are not used.
-GPS acquisition always checks the original fix age. Its validation and cleanup
-rules are recorded in [the location contract](docs/gps-location-contract.json).
+GPS fixes must be no more than ten seconds old. NMEA requires a valid checksum,
+fix status, and UTC fix time. Network fixes must be no more than 60 seconds old,
+have valid coordinates and a reported accuracy of 25 km or better, and must not
+be marked as mock or GPS-derived. The app uses the provider's monotonic timestamp
+to calculate the remaining lifetime and never queries last-known locations.
+The validation and cleanup rules are recorded in
+[the location contract](docs/gps-location-contract.json).
+
+Wi-Fi/cell availability depends on the head unit's installed and enabled network
+provider, internet access, and regional radio coverage. The status shows **Wi-Fi**
+or **Cell network** when the provider reports the radio source, and **Network
+provider** when it does not. OEM providers can reuse positions and rewrite fix
+timestamps; the Android callback alone cannot prove an independent, freshly
+measured radio fix. Wi-Fi/cell-only mode controls which provider this app requests.
 
 City names use Android's built-in `Geocoder`, restored from the 1.1.0 release.
 The app displays the returned city, or its sub-administrative/admin area when
 the city is unavailable. If geocoding is unavailable or fails, it displays
 **Current location** and continues the weather update. Availability and naming
-depend on the head unit's geocoding service.
+depend on the head unit's geocoding service. A successful update reports when
+the city name or optional air-quality data could not be obtained.
 
 After fetching weather, the app writes it to the BYD provider, reads it back,
 and requests a widget refresh. A successful update advances the saved timestamp.
@@ -107,12 +125,12 @@ it does not acknowledge rendering on the head unit. The firmware contract,
 artifact hashes, and REA evidence IDs are retained in
 [the test fixture](app/src/test/resources/byd-weatherdata-2.9.5-contract.json).
 
-GPS and weather-fetch failures keep the previous weather data. Failed updates
+Location and weather-fetch failures keep the previous weather data. Failed updates
 leave the saved success timestamp unchanged. Failed provider writes attempt
 to restore the previous data.
 
 Failures retry after five minutes when prerequisites remain available. Otherwise,
-the app waits for GPS or network recovery; revoked location permission must be
+the app waits for location or network recovery; revoked location permission must be
 restored before updates can resume. An air-quality fetch failure does not block
 the weather update.
 
@@ -120,14 +138,17 @@ the weather update.
 
 | Symptom | Check |
 | --- | --- |
-| Waiting for GPS or internet | Enable GPS, grant precise location, and check that Android recognizes the internet connection. |
-| GPS unavailable | Enable GPS and precise location access. A fresh GPS callback or NMEA fix must arrive within 60 seconds; the app retries after five minutes. |
-| Update failed | Check the reported error, network access, and access to the BYD weather provider. |
+| No internet or internet check pending | Connect Wi-Fi/mobile data and complete any sign-in screen. Background updates resume when Android confirms access. |
+| Location unavailable | Check Android location settings and permission. Try Wi-Fi/cell only if GPS is unreliable; the car must expose a working network provider. |
+| Wi-Fi/cell location provider unavailable or off | Enable network location in Android settings if offered. An installed provider APK alone does not establish that it is bound and delivering fixes. |
+| Weather download failed | The message distinguishes DNS, timeout, secure-connection, and API errors. Check internet access; check date/time for secure-connection failures. |
+| Forecast data could not be read | Retry the update or update BYD Weather. The previous weather is kept. |
+| BYD widget update failed | Check access to the stock weather provider and firmware compatibility. |
 | Updates stop after reboot | Check both startup switches, background location permission, and DiLink's background settings. |
 | A settings screen is unavailable | Open the relevant system settings from the car launcher. |
-| Last successful time stays unchanged | A GPS fix or weather request alone is not enough; the provider update must succeed. |
+| Last successful time stays unchanged | A location fix or weather request alone is not enough; the provider update must succeed. |
 
-Provider access, GPS delivery, and automatic startup depend on DiLink firmware.
+Provider access, location delivery, and automatic startup depend on DiLink firmware.
 Automated tests cover parsing, navigation, and icon rendering; they do not
 establish those behaviors on a physical head unit.
 
