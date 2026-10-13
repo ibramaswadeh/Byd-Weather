@@ -1,12 +1,7 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "implementation": "app/src/main/java/com/ibramaswadeh/bydweather/WeatherLocationSource.java",
   "acquisition": {
-    "modes": [
-      "automatic",
-      "network"
-    ],
-    "default_mode": "automatic",
     "providers": [
       "gps",
       "network"
@@ -20,9 +15,8 @@
     ],
     "timeout_ms": 60000,
     "network_fallback_delay_ms": 10000,
-    "automatic": "Start GPS and optional NMEA. Start network location after ten seconds without a usable fix, or immediately when GPS or precise permission is unavailable.",
-    "network": "Request only NETWORK_PROVIDER; do not subscribe to GPS or NMEA.",
-    "completion": "The first usable requested-provider callback or validated NMEA fix completes one acquisition."
+    "completion": "The first usable requested-provider callback or validated NMEA fix completes one acquisition.",
+    "strategy": "Start GPS and optional NMEA. Start network location after ten seconds without a usable fix, or immediately when GPS or precise permission is unavailable."
   },
   "validation": {
     "gps_maximum_fix_age_ms": 10000,
@@ -50,7 +44,7 @@
       "provider disabled"
     ],
     "late_callbacks": "Generation checks suppress callbacks from completed or cancelled acquisitions.",
-    "mode_change": "Cancel the previous acquisition or refresh generation and schedule an update using the selected mode.",
-    "failure": "Keep the previous weather and retry after five minutes."
+    "failure": "Keep the previous weather and retry after five minutes.",
+    "upgrade": "Discard the retired weather_location_mode preference; every acquisition uses GPS with automatic network fallback."
   }
 }

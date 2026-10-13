@@ -98,7 +98,7 @@ public class WeatherRuntimeTest {
         exerciseStockRefresh(true, "عمّان");
     }
 
-    @Test public void networkOnlyRefreshUsesTheNetworkFixWithApproximatePermission() throws Exception {
+    @Test public void automaticFallbackUsesTheNetworkFixWithApproximatePermission() throws Exception {
         DeviceGeocoder.addresses.get(0).setLocality("Москва");
         exerciseStockRefresh(true, "Москва", true, null);
     }
@@ -112,98 +112,10 @@ public class WeatherRuntimeTest {
         exerciseStockRefresh(true, "Amman", false, new WeatherErrors.HttpFailure(429));
     }
 
-    @Test public void changingLocationModeCancelsOldGpsAndUsesOnlyTheReplacementNetworkFix() throws Exception {
-        Context context = RuntimeEnvironment.getApplication();
-        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION);
-        MemoryStockProvider provider = new MemoryStockProvider();
-        android.content.pm.ProviderInfo info = new android.content.pm.ProviderInfo();
-        info.authority = "com.byd.weatherdata.utils.WeatherContentProvider";
-        info.exported = true;
-        provider.attachInfo(context, info);
-        org.robolectric.shadows.ShadowContentResolver.registerProviderInternal(info.authority, provider);
-        LocationManager location = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
-        shadowOf(location).setProviderEnabled(LocationManager.GPS_PROVIDER, true);
-        shadowOf(location).setProviderEnabled(LocationManager.NETWORK_PROVIDER, true);
-        ConnectivityManager network = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        shadowOf(network).setActiveNetworkInfo(ShadowNetworkInfo.newInstance(NetworkInfo.DetailedState.CONNECTED,
-                ConnectivityManager.TYPE_WIFI, 0, true, true));
-        NetworkCapabilities capabilities = new NetworkCapabilities();
-        shadowOf(capabilities).addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
-        shadowOf(capabilities).addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
-        shadowOf(network).setNetworkCapabilities(network.getActiveNetwork(), capabilities);
-        SharedPreferences preferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE);
-        long previousSuccess = System.currentTimeMillis() - 60_000;
-        preferences.edit().putBoolean(WeatherRuntime.PREF_ENABLED, true)
-                .putLong(WeatherRuntime.PREF_LAST_SUCCESS_MS, previousSuccess)
-                .putInt(WeatherRuntime.PREF_INTERVAL_MINUTES, 180).apply();
-        JSONObject forecast = MetFixtures.forecast(System.currentTimeMillis(), "cloudy", 18);
-        List<String> requests = new CopyOnWriteArrayList<>();
-        List<String> failures = new CopyOnWriteArrayList<>();
-        java.util.concurrent.CountDownLatch oldDownloadStarted = new java.util.concurrent.CountDownLatch(1);
-        AtomicReference<Boolean> oldResult = new AtomicReference<>();
-        WeatherRuntime runtime = new WeatherRuntime(context, preferences, (name, fields) -> {
-            if (name.equals("weather_failure")) failures.add(String.valueOf(fields[1]));
-        }, url -> {
-            requests.add(url);
-            if (url.contains("lat=10.0000")) {
-                oldDownloadStarted.countDown();
-                try { new java.util.concurrent.CountDownLatch(1).await(); }
-                catch (InterruptedException cancelled) { throw new IOException("cancelled old request", cancelled); }
-            }
-            if (url.contains("/airqualityforecast/")) throw new IOException("optional air quality unavailable");
-            return MetFixtures.response(url, forecast);
-        });
-        try {
-            runtime.start();
-            assertTrue(runtime.requestNow("test", (success, error) -> oldResult.set(success)));
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (shadowOf(location).getLocationUpdateListeners().isEmpty() && System.nanoTime() < deadline) {
-                shadowOf(Looper.getMainLooper()).idle();
-                Thread.sleep(10);
-            }
-            assertEquals(1, shadowOf(location).getLocationUpdateListeners().size());
-            android.location.LocationListener oldCallback = shadowOf(location).getLocationUpdateListeners().get(0);
-            Location oldGps = new Location(LocationManager.GPS_PROVIDER);
-            oldGps.setLatitude(10);
-            oldGps.setLongitude(20);
-            oldGps.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
-            oldCallback.onLocationChanged(oldGps);
-            assertTrue(oldDownloadStarted.await(5, TimeUnit.SECONDS));
-            preferences.edit().putString(WeatherRuntime.PREF_LOCATION_MODE, "network").apply();
-            runtime.settingsChanged();
-            assertEquals(Boolean.FALSE, oldResult.get());
-            oldCallback.onLocationChanged(oldGps);
-            shadowOf(Looper.getMainLooper()).idle();
-            assertNull(provider.payload);
-            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (preferences.getLong(WeatherRuntime.PREF_LAST_SUCCESS_MS, 0) == previousSuccess
-                    && System.nanoTime() < deadline) {
-                shadowOf(Looper.getMainLooper()).idle();
-                Location fix = new Location(LocationManager.NETWORK_PROVIDER);
-                fix.setLatitude(31.9539);
-                fix.setLongitude(35.9106);
-                fix.setAccuracy(100);
-                fix.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
-                android.os.Bundle extras = new android.os.Bundle();
-                extras.putString("netType", "wf");
-                fix.setExtras(extras);
-                shadowOf(location).simulateLocation(fix);
-                shadowOf(Looper.getMainLooper()).idle();
-                Thread.sleep(10);
-            }
-            assertTrue(runtime.lastSuccessMs() > previousSuccess);
-            assertEquals("Wi-Fi", preferences.getString(WeatherRuntime.PREF_LAST_LOCATION_METHOD, ""));
-            assertTrue(requests.size() >= 2);
-            assertTrue(requests.get(0).contains("lat=10.0000&lon=20.0000"));
-            assertTrue(requests.subList(1, requests.size()).stream()
-                    .allMatch(url -> (url.contains("lat=31.9539&lon=35.9106") || url.contains("lat=31.95&lon=35.91"))));
-            assertTrue("Cancelled downloads must not replace the current update's status", failures.isEmpty());
-            assertTrue(WeatherMapping.isComplete(provider.payload));
-            assertTrue(shadowOf(location).getLocationUpdateListeners().isEmpty());
-        } finally {
-            runtime.shutdown();
-        }
+    @Test public void retiredNetworkPreferenceIsClearedAndGpsIsUsed() throws Exception {
+        RuntimeEnvironment.getApplication().getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+                .putString("weather_location_mode", "network").apply();
+        exerciseStockRefresh(true, "Amman");
     }
 
     @Test public void unvalidatedInternetReportsThePrerequisiteWithoutStartingLocationOrHttp() throws Exception {
@@ -252,10 +164,10 @@ public class WeatherRuntimeTest {
     }
 
     private void exerciseStockRefresh(boolean stockAvailable, String expectedName,
-            boolean networkOnly, Exception forecastFailure) throws Exception {
+            boolean approximatePermission, Exception forecastFailure) throws Exception {
         Context context = RuntimeEnvironment.getApplication();
         shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION);
-        if (networkOnly) {
+        if (approximatePermission) {
             shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_COARSE_LOCATION);
             shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.ACCESS_FINE_LOCATION);
         }
@@ -269,7 +181,7 @@ public class WeatherRuntimeTest {
         }
         LocationManager location = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
         shadowOf(location).setProviderEnabled(LocationManager.GPS_PROVIDER, true);
-        shadowOf(location).setProviderEnabled(LocationManager.NETWORK_PROVIDER, networkOnly);
+        shadowOf(location).setProviderEnabled(LocationManager.NETWORK_PROVIDER, approximatePermission);
         ConnectivityManager network = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
         shadowOf(network).setActiveNetworkInfo(ShadowNetworkInfo.newInstance(NetworkInfo.DetailedState.CONNECTED,
                 ConnectivityManager.TYPE_WIFI, 0, true, true));
@@ -281,7 +193,6 @@ public class WeatherRuntimeTest {
         long previousNativeSuccess = System.currentTimeMillis() - 60_000;
         preferences.edit().putBoolean(WeatherRuntime.PREF_ENABLED, true)
                 .putInt(WeatherRuntime.PREF_INTERVAL_MINUTES, 180)
-                .putString(WeatherRuntime.PREF_LOCATION_MODE, networkOnly ? "network" : "automatic")
                 .putLong(WeatherRuntime.PREF_LAST_SUCCESS_MS, previousNativeSuccess)
                 .putString("weather_widget_payload", "obsolete renderer cache")
                 .putLong("weather_last_fetch_ms", System.currentTimeMillis() + TimeUnit.HOURS.toMillis(3)).apply();
@@ -316,12 +227,12 @@ public class WeatherRuntimeTest {
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
             while (result.get() == null && System.nanoTime() < deadline) {
                 shadowOf(Looper.getMainLooper()).idle();
-                Location fix = new Location(networkOnly ? LocationManager.NETWORK_PROVIDER : LocationManager.GPS_PROVIDER);
+                Location fix = new Location(approximatePermission ? LocationManager.NETWORK_PROVIDER : LocationManager.GPS_PROVIDER);
                 fix.setLatitude(31.9539);
                 fix.setLongitude(35.9106);
                 fix.setTime(System.currentTimeMillis());
                 fix.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
-                if (networkOnly) {
+                if (approximatePermission) {
                     fix.setAccuracy(250);
                     android.os.Bundle extras = new android.os.Bundle();
                     extras.putString("networkLocationType", "wifi");
@@ -352,6 +263,7 @@ public class WeatherRuntimeTest {
             else assertNull(geocoderFallback.get());
             assertTrue("One-shot GPS must be released before the update finishes",
                     shadowOf(location).getLocationUpdateListeners().isEmpty());
+            assertFalse(preferences.contains("weather_location_mode"));
             assertFalse(preferences.contains("weather_widget_payload"));
             assertFalse(preferences.contains("weather_last_fetch_ms"));
             if (shouldSucceed) {
@@ -364,7 +276,7 @@ public class WeatherRuntimeTest {
                 assertEquals(expectedName, new JSONObject(provider.payload).getJSONObject("data")
                         .getJSONObject("city").getString("englishCityName"));
                 assertEquals(expectedName, preferences.getString("weather_last_location_name", ""));
-                assertEquals(networkOnly ? "Wi-Fi" : "GPS",
+                assertEquals(approximatePermission ? "Wi-Fi" : "GPS",
                         preferences.getString(WeatherRuntime.PREF_LAST_LOCATION_METHOD, ""));
                 assertEquals("Unavailable", preferences.getString(WeatherRuntime.PREF_AIR_QUALITY, ""));
                 assertTrue(runtime.lastSuccessMs() > previousNativeSuccess);

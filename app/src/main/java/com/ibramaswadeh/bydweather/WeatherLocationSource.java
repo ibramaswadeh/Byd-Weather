@@ -15,18 +15,8 @@ import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
-/** Collects one recent location, preferring GPS or requesting the network provider directly. */
+/** Collects one recent location using GPS with an automatic network fallback. */
 final class WeatherLocationSource {
-    enum Mode {
-        AUTOMATIC("automatic"), NETWORK_ONLY("network");
-
-        final String preference;
-        Mode(String preference) { this.preference = preference; }
-        static Mode fromPreference(String value) {
-            return NETWORK_ONLY.preference.equals(value) ? NETWORK_ONLY : AUTOMATIC;
-        }
-    }
-
     static final class Fix {
         final double latitude;
         final double longitude;
@@ -69,7 +59,7 @@ final class WeatherLocationSource {
         manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
     }
 
-    void acquire(Mode mode, Consumer<String> progress, Consumer<Fix> success,
+    void acquire(Consumer<String> progress, Consumer<Fix> success,
             Consumer<String> failure) {
         long token = generation.incrementAndGet();
         handler.post(() -> {
@@ -86,12 +76,12 @@ final class WeatherLocationSource {
                 fail(token, "Location permission denied. Allow location access in app settings.", failure);
                 return;
             }
-            timeout = () -> fail(token, failureMessage(mode), failure);
+            timeout = () -> fail(token, failureMessage(), failure);
             handler.postDelayed(timeout, ACQUISITION_TIMEOUT_MS);
-            if (mode == Mode.NETWORK_ONLY || !startGps(token, progress, success, failure)) {
-                if (token == generation.get()) startNetwork(token, mode, progress, success, failure);
+            if (!startGps(token, progress, success, failure)) {
+                if (token == generation.get()) startNetwork(token, progress, success, failure);
             } else if (token == generation.get()) {
-                fallback = () -> startNetwork(token, mode, progress, success, failure);
+                fallback = () -> startNetwork(token, progress, success, failure);
                 handler.postDelayed(fallback, NETWORK_FALLBACK_DELAY_MS);
             }
         });
@@ -142,9 +132,9 @@ final class WeatherLocationSource {
                     if (token != generation.get() || !LocationManager.GPS_PROVIDER.equals(provider)) return;
                     gpsProblem = "GPS was turned off";
                     releaseGps();
-                    startNetwork(token, Mode.AUTOMATIC, progress, success, failure);
+                    startNetwork(token, progress, success, failure);
                     if (token == generation.get() && network == null) {
-                        fail(token, failureMessage(Mode.AUTOMATIC), failure);
+                        fail(token, failureMessage(), failure);
                     }
                 }
                 @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
@@ -161,7 +151,7 @@ final class WeatherLocationSource {
         return false;
     }
 
-    private void startNetwork(long token, Mode mode, Consumer<String> progress,
+    private void startNetwork(long token, Consumer<String> progress,
             Consumer<Fix> success, Consumer<String> failure) {
         if (token != generation.get() || networkAttempted) return;
         networkAttempted = true;
@@ -171,8 +161,7 @@ final class WeatherLocationSource {
             } else if (!manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 networkProblem = "Wi-Fi/cell location is off";
             } else {
-                progress.accept(mode == Mode.NETWORK_ONLY ? "Getting a Wi-Fi/cell location…"
-                        : gpsProblem == null ? "GPS has no fix yet. Trying Wi-Fi/cell location…"
+                progress.accept(gpsProblem == null ? "GPS has no fix yet. Trying Wi-Fi/cell location…"
                         : "GPS unavailable: " + gpsProblem + ". Trying Wi-Fi/cell location…");
                 network = new LocationListener() {
                     @Override public void onLocationChanged(Location location) {
@@ -195,7 +184,7 @@ final class WeatherLocationSource {
                         if (token != generation.get() || !LocationManager.NETWORK_PROVIDER.equals(provider)) return;
                         networkProblem = "Wi-Fi/cell location was turned off";
                         releaseNetwork();
-                        if (gps == null) fail(token, failureMessage(mode), failure);
+                        if (gps == null) fail(token, failureMessage(), failure);
                     }
                     @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
                 };
@@ -209,12 +198,11 @@ final class WeatherLocationSource {
             networkProblem = "Wi-Fi/cell location provider could not start";
         }
         releaseNetwork();
-        if (gps == null) fail(token, failureMessage(mode), failure);
+        if (gps == null) fail(token, failureMessage(), failure);
     }
 
-    private String failureMessage(Mode mode) {
+    private String failureMessage() {
         String radio = networkProblem == null ? "no recent Wi-Fi/cell fix within 60 seconds" : networkProblem;
-        if (mode == Mode.NETWORK_ONLY) return "Location unavailable: " + radio + ". Check Android location settings and internet access.";
         String satellite = gpsProblem == null ? "no recent GPS fix within 60 seconds" : gpsProblem;
         return "Location unavailable: " + satellite + "; " + radio + ". Check location settings.";
     }

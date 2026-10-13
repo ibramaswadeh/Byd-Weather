@@ -8,7 +8,6 @@ import android.os.Looper;
 import android.os.ResultReceiver;
 import android.view.View;
 import android.widget.Button;
-import android.widget.RadioButton;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -45,7 +44,7 @@ public class MainActivityUpdateTest {
         assertNotNull(refresh);
         ResultReceiver receiver = refresh.getParcelableExtra(WeatherService.EXTRA_RECEIVER);
         Bundle progress = new Bundle();
-        progress.putString("message", "Getting a Wi-Fi/cell location…");
+        progress.putString("message", "GPS has no fix yet. Trying Wi-Fi/cell location…");
         receiver.send(WeatherService.RESULT_PROGRESS, progress);
         shadowOf(Looper.getMainLooper()).idle();
         assertFalse(update.isEnabled());
@@ -60,16 +59,5 @@ public class MainActivityUpdateTest {
         shadowOf(Looper.getMainLooper()).idle();
         assertTrue(update.isEnabled());
         assertNotNull(MainActivityNavigationTest.find(root, error));
-    }
-
-    @Test public void networkOnlyChoiceSurvivesActivityRecreation() {
-        MainActivity activity = Robolectric.buildActivity(MainActivity.class).setup().get();
-        RadioButton network = (RadioButton) MainActivityNavigationTest.find(
-                activity.getWindow().getDecorView(), "Wi-Fi/cell only");
-        network.performClick();
-        MainActivity restored = Robolectric.buildActivity(MainActivity.class).setup().get();
-        RadioButton selected = (RadioButton) MainActivityNavigationTest.find(
-                restored.getWindow().getDecorView(), "Wi-Fi/cell only");
-        assertTrue(selected.isChecked());
     }
 }

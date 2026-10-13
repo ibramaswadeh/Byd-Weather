@@ -10,8 +10,7 @@
     <string name="interval_value">%1$d</string>
     <string name="location_permission_summary">%1$s · %2$s</string>
     <string name="location_heading">Location</string>
-    <string name="location_automatic">Automatic: GPS with Wi-Fi/cell fallback</string>
-    <string name="location_network">Wi-Fi/cell only</string>
+    <string name="location_description">GPS first, with automatic Wi-Fi/cell fallback when available.</string>
     <string name="grant_location">Grant background location</string>
     <string name="schedule_heading">Schedule</string>
     <string name="refresh_interval">Refresh interval\n5–180 minutes</string>

@@ -38,7 +38,6 @@ public final class WeatherRuntime {
     static final String PREF_LAST_LOCATION_METHOD = "weather_last_location_method";
     static final String PREF_LAST_UPDATE_NOTICES = "weather_last_update_notices";
     static final String PREF_AIR_QUALITY = "weather_air_quality";
-    static final String PREF_LOCATION_MODE = "weather_location_mode";
     public static final int DEFAULT_INTERVAL_MINUTES = 15;
     public static final int MIN_INTERVAL_MINUTES = 5;
     public static final int MAX_INTERVAL_MINUTES = 180;
@@ -92,7 +91,6 @@ public final class WeatherRuntime {
     private long locationExpiresAtElapsedMs;
     private long locationRetryAtElapsedMs;
     private final WeatherLocationSource locationSource;
-    private WeatherLocationSource.Mode locationMode;
     private ConnectivityManager waitingConnectivityManager;
     private boolean locationCallbackRegistered;
     private boolean networkCallbackRegistered;
@@ -141,12 +139,11 @@ public final class WeatherRuntime {
         this.context = application == null ? context : application;
         this.preferences = preferences;
         this.locationSource = new WeatherLocationSource(this.context);
-        this.locationMode = selectedLocationMode();
         this.eventSink = eventSink;
         this.lastSuccessMs = preferences.getLong(PREF_LAST_SUCCESS_MS, 0L);
-        // Discard only obsolete state from the removed owned forecast renderer.
+        // Remove obsolete renderer state and the retired location preference.
         preferences.edit().remove("weather_widget_payload").remove("weather_last_fetch_ms")
-                .remove("weather_last_fetch_location_name").apply();
+                .remove("weather_last_fetch_location_name").remove("weather_location_mode").apply();
     }
 
     public void start() {
@@ -164,14 +161,11 @@ public final class WeatherRuntime {
     /** Applies refresh settings and stops pending updates when disabled. */
     public void settingsChanged() {
         boolean nowEnabled = preferences.getBoolean(PREF_ENABLED, false);
-        WeatherLocationSource.Mode nowLocationMode = selectedLocationMode();
         boolean unregister = false;
         ResultCallback cancelledCallback = null;
         synchronized (stateLock) {
             int interval = intervalMinutes();
             boolean changed = enabled != nowEnabled;
-            boolean modeChanged = locationMode != nowLocationMode;
-            locationMode = nowLocationMode;
             enabled = nowEnabled;
             cancelScheduledLocked();
             if (!nowEnabled) {
@@ -182,14 +176,6 @@ public final class WeatherRuntime {
                 cancelActiveLocked();
                 unregister = true;
                 emit("weather_disabled", "reason", "settings");
-            } else if (modeChanged) {
-                cancelledCallback = requestPending ? pendingCallback : activeCallback;
-                activeCallback = null;
-                generation++;
-                clearPendingLocked();
-                cancelActiveLocked();
-                unregisterPrerequisiteCallbacksLocked();
-                scheduleLocked(0L);
             } else if (requestPending) {
                 schedulePrerequisiteRecheckLocked();
             } else if (started || changed) {
@@ -200,8 +186,7 @@ public final class WeatherRuntime {
             }
         }
         if (unregister) unregisterPrerequisiteCallbacks();
-        deliver(cancelledCallback, false, nowEnabled
-                ? "Location method changed. Starting a new update." : "Weather updates are off.");
+        deliver(cancelledCallback, false, "Weather updates are off.");
     }
 
     public boolean requestNow(String reason) {
@@ -607,7 +592,7 @@ public final class WeatherRuntime {
         if (locationCallbackRegistered || SystemClock.elapsedRealtime() < locationRetryAtElapsedMs) return;
         locationCallbackRegistered = true;
         long token = pendingGeneration;
-        locationSource.acquire(locationMode, message -> reportProgress(token, message), fix -> {
+        locationSource.acquire(message -> reportProgress(token, message), fix -> {
             synchronized (stateLock) {
                 if (!started || !enabled || !requestPending || token != pendingGeneration
                         || !locationCallbackRegistered) return;
@@ -638,10 +623,6 @@ public final class WeatherRuntime {
             emit("weather_location_unavailable", "error", error);
             deliver(callback, false, error + " Previous weather kept; retrying in 5 minutes.");
         });
-    }
-
-    private WeatherLocationSource.Mode selectedLocationMode() {
-        return WeatherLocationSource.Mode.fromPreference(preferences.getString(PREF_LOCATION_MODE, "automatic"));
     }
 
     private String internetWaitMessage() {

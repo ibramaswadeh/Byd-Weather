@@ -166,7 +166,7 @@ public class WeatherLocationSourceTest {
         acquire();
         android.location.LocationListener oldCallback = gps.getLocationUpdateListeners().get(0);
         List<WeatherLocationSource.Fix> replacement = new ArrayList<>();
-        source.acquire(WeatherLocationSource.Mode.AUTOMATIC, message -> { }, replacement::add, failures::add);
+        source.acquire(message -> { }, replacement::add, failures::add);
         idle();
         oldCallback.onLocationChanged(freshGps());
         assertTrue(replacement.isEmpty());
@@ -196,9 +196,9 @@ public class WeatherLocationSourceTest {
         assertEquals(1, failures.size());
     }
 
-    @Test public void networkOnlySkipsGpsAndNmeaAndCompletesFromWifi() {
+    @Test public void disabledGpsSkipsNmeaAndCompletesFromWifi() {
         gps.setProviderEnabled(LocationManager.NETWORK_PROVIDER, true);
-        acquireNetworkOnly();
+        acquireWithoutGps();
         gps.simulateLocation(freshGps());
         sendFix();
         assertTrue(fixes.isEmpty());
@@ -273,22 +273,22 @@ public class WeatherLocationSourceTest {
     @Test public void missingLocationPermissionReportsThePermissionFailure() {
         shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(
                 android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION);
-        acquireNetworkOnly();
+        acquireWithoutGps();
         assertEquals(1, failures.size());
         assertTrue(failures.get(0).contains("permission denied"));
         assertTrue(gps.getLocationUpdateListeners().isEmpty());
     }
 
-    @Test public void networkOnlyReportsDisabledProviderInsteadOfStartingGps() {
-        acquireNetworkOnly();
+    @Test public void disabledProvidersReportNetworkFailure() {
+        acquireWithoutGps();
         assertEquals(1, failures.size());
         assertTrue(failures.get(0).contains("Wi-Fi/cell location is off"));
         assertTrue(gps.getLocationUpdateListeners().isEmpty());
     }
 
     @Test @Config(shadows = NetworkProviderAbsentLocationManager.class)
-    public void missingNetworkProviderIsReportedWithoutRequestingGpsInNetworkOnlyMode() {
-        acquireNetworkOnly();
+    public void missingNetworkProviderIsReportedWhenGpsIsDisabled() {
+        acquireWithoutGps();
         assertEquals(1, failures.size());
         assertTrue(failures.get(0).contains("provider is unavailable"));
         assertTrue(gps.getLocationUpdateListeners().isEmpty());
@@ -299,7 +299,7 @@ public class WeatherLocationSourceTest {
         Location old = freshNetwork("wf");
         gps.setLastKnownLocation(LocationManager.NETWORK_PROVIDER, old);
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(61));
-        acquireNetworkOnly();
+        acquireWithoutGps();
         assertTrue(fixes.isEmpty());
         old.setTime(System.currentTimeMillis());
         gps.simulateLocation(old);
@@ -314,7 +314,7 @@ public class WeatherLocationSourceTest {
         gps.setProviderEnabled(LocationManager.NETWORK_PROVIDER, true);
         Location old = freshNetwork("wf");
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(59));
-        acquireNetworkOnly();
+        acquireWithoutGps();
         gps.simulateLocation(old);
         idle();
         assertEquals(1, fixes.size());
@@ -323,7 +323,7 @@ public class WeatherLocationSourceTest {
 
     @Test public void rejectsGpsTaggedNetworkResultsAndUnusableAccuracy() {
         gps.setProviderEnabled(LocationManager.NETWORK_PROVIDER, true);
-        acquireNetworkOnly();
+        acquireWithoutGps();
         android.location.LocationListener callback = gps.getLocationUpdateListeners().get(0);
         callback.onLocationChanged(freshNetwork("ll"));
         for (int invalid = 0; invalid < 7; invalid++) {
@@ -345,7 +345,7 @@ public class WeatherLocationSourceTest {
 
     @Test public void networkTimeoutReportsItsRejectedResultAndReleasesListeners() {
         gps.setProviderEnabled(LocationManager.NETWORK_PROVIDER, true);
-        acquireNetworkOnly();
+        acquireWithoutGps();
         gps.simulateLocation(freshNetwork("gps"));
         idle();
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(60));
@@ -356,7 +356,7 @@ public class WeatherLocationSourceTest {
 
     @Test public void networkDoesNotClaimARadioSourceWhenTheProviderOmitsIt() {
         gps.setProviderEnabled(LocationManager.NETWORK_PROVIDER, true);
-        acquireNetworkOnly();
+        acquireWithoutGps();
         Location fix = freshNetwork("wf");
         fix.setExtras(null);
         gps.simulateLocation(fix);
@@ -367,7 +367,7 @@ public class WeatherLocationSourceTest {
 
     @Test public void satelliteMetadataOverridesAnOtherwiseWifiTaggedResult() {
         gps.setProviderEnabled(LocationManager.NETWORK_PROVIDER, true);
-        acquireNetworkOnly();
+        acquireWithoutGps();
         Location fix = freshNetwork("wf");
         fix.getExtras().putString("networkLocationType", "gps");
         gps.simulateLocation(fix);
@@ -381,7 +381,7 @@ public class WeatherLocationSourceTest {
 
     @Test public void mockNetworkCoordinatesAreRejected() {
         gps.setProviderEnabled(LocationManager.NETWORK_PROVIDER, true);
-        acquireNetworkOnly();
+        acquireWithoutGps();
         Location fix = freshNetwork("wf");
         org.robolectric.util.ReflectionHelpers.callInstanceMethod(fix, "setIsFromMockProvider",
                 org.robolectric.util.ReflectionHelpers.ClassParameter.from(boolean.class, true));
@@ -447,12 +447,13 @@ public class WeatherLocationSourceTest {
         return location;
     }
 
-    private void acquireNetworkOnly() {
-        source.acquire(WeatherLocationSource.Mode.NETWORK_ONLY, progress::add, fixes::add, failures::add);
+    private void acquireWithoutGps() {
+        gps.setProviderEnabled(LocationManager.GPS_PROVIDER, false);
+        source.acquire(progress::add, fixes::add, failures::add);
         idle();
     }
 
-    private void acquire() { source.acquire(WeatherLocationSource.Mode.AUTOMATIC, progress::add, fixes::add, failures::add); idle(); }
+    private void acquire() { source.acquire(progress::add, fixes::add, failures::add); idle(); }
     private void idle() { shadowOf(Looper.getMainLooper()).idle(); }
     private void sendFix() {
         long now = System.currentTimeMillis();

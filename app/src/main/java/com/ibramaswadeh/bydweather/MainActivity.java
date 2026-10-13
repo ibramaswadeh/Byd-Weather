@@ -27,8 +27,6 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
-import android.widget.RadioButton;
-import android.widget.RadioGroup;
 import android.widget.Toast;
 
 import java.text.DateFormat;
@@ -155,26 +153,7 @@ public final class MainActivity extends Activity {
         updates.addView(statusText);
 
         addHeading(settings, R.string.location_heading);
-        RadioGroup locationModes = new RadioGroup(this);
-        locationModes.setOrientation(RadioGroup.VERTICAL);
-        RadioButton automatic = locationOption(R.string.location_automatic);
-        RadioButton networkOnly = locationOption(R.string.location_network);
-        locationModes.addView(automatic);
-        locationModes.addView(networkOnly);
-        WeatherLocationSource.Mode mode = WeatherLocationSource.Mode.fromPreference(
-                preferences.getString(WeatherRuntime.PREF_LOCATION_MODE, "automatic"));
-        locationModes.check(mode == WeatherLocationSource.Mode.NETWORK_ONLY
-                ? networkOnly.getId() : automatic.getId());
-        settings.addView(locationModes);
-        TextView locationHint = label(locationHint(mode), 14, MUTED);
-        settings.addView(locationHint);
-        locationModes.setOnCheckedChangeListener((group, checkedId) -> {
-            WeatherLocationSource.Mode selected = checkedId == networkOnly.getId()
-                    ? WeatherLocationSource.Mode.NETWORK_ONLY : WeatherLocationSource.Mode.AUTOMATIC;
-            preferences.edit().putString(WeatherRuntime.PREF_LOCATION_MODE, selected.preference).apply();
-            locationHint.setText(locationHint(selected));
-            if (weatherSwitch.isChecked()) WeatherService.command(this, WeatherService.ACTION_SETTINGS_CHANGED);
-        });
+        settings.addView(label(getString(R.string.location_description), 14, MUTED));
         addSpace(settings, 12);
         permissionText = label("", 14, MUTED);
         settings.addView(permissionText);
@@ -279,16 +258,6 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true);
         heading.setPadding(0, 0, 0, dp(8));
         parent.addView(heading);
-    }
-
-    private RadioButton locationOption(int resource) {
-        RadioButton option = new RadioButton(this);
-        option.setId(View.generateViewId());
-        option.setText(resource);
-        option.setTextColor(TEXT);
-        option.setTextSize(16);
-        option.setMinHeight(dp(52));
-        return option;
     }
 
     private void setWeatherEnabled(boolean enabled) {
@@ -485,12 +454,6 @@ public final class MainActivity extends Activity {
 
     private void setStatusMessage(String message) {
         if (!message.contentEquals(statusText.getText())) statusText.setText(message);
-    }
-
-    private static String locationHint(WeatherLocationSource.Mode mode) {
-        return mode == WeatherLocationSource.Mode.NETWORK_ONLY
-                ? "Use this when GPS is unreliable. Availability depends on the car's Wi-Fi/cell location service."
-                : "If GPS has no fix after 10 seconds, the app tries Wi-Fi/cell location.";
     }
 
     private Button button(String label) {
